@@ -1,7 +1,7 @@
 # VideoAgent 实施路线图
 
 > 最后更新: 2026-06-23  
-> 当前版本: v0.1.0
+> 当前版本: v0.2.0
 
 ---
 
@@ -15,22 +15,33 @@
   - 拼接精华视频（交叉淡入淡出转场）
   - 从报告 JSON 一键提取（`clips_from_report()`）
 - [x] CLI 入口（`src/main.py`）：`transcribe` / `analyze` / `clip` / `pipeline`
+- [x] **单视频全流程接口**（`src/pipeline.py`）
+  - `process_video()` — 封装 转录→分析→(可选)剪辑 完整管线
+  - 每次调用独立创建和释放资源，返回 `VideoProcessResult`
+  - 所有配置参数可覆盖（`whisper_*`、`llm_*`、`ffmpeg_*`）
+- [x] **批量处理模块**（`src/batch/`）
+  - `run_batch()` — 串行调用 `process_video()`，每个视频完全独立运行
+  - `discover_videos()` — 支持文件/目录递归/glob 模式
+  - CSV 汇总报告输出
+  - CLI `batch` 命令
 
 ---
 
 ## 近期目标（提升现有管线质量）
 
-### 1. 批量处理模式 ⭐ 推荐优先
+### 1. 批量处理模式 ✅ 已完成
 
-目前只能一次处理一个视频，增加批量处理大幅提升实用性。
+> 已实现：`src/pipeline.py` + `src/batch/__init__.py` + CLI `batch` 命令
 
-**功能设计：**
-- `videoagent pipeline --batch "D:/videos/*.mp4"` 批量处理目录
-- 支持 glob 模式和目录递归
-- 并发控制：`--workers N` 同时处理 N 个视频（避免 GPU OOM）
-- 生成批量汇总报告（Excel/CSV），包含所有视频的亮点总览
+**已实现功能：**
+- [x] `videoagent batch "D:/videos/*.mp4"` 批量处理目录
+- [x] 支持 glob 模式和目录递归
+- [x] 串行处理，每个视频完全独立运行（`process_video()` 接口）
+- [x] 生成批量汇总报告（CSV），包含所有视频的处理结果
 
-**涉及文件：** `src/main.py`（新增 batch 命令）、新增 `src/batch/` 模块
+**待增强：**
+- [ ] 并发控制：`--workers N` 同时处理 N 个视频（避免 GPU OOM）
+- [ ] Excel 格式汇总报告
 
 ---
 

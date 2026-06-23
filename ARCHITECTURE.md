@@ -1,7 +1,8 @@
 # VideoAgent 项目架构规划
 
 > 创建日期: 2026-06-22  
-> 状态: 规划阶段
+> 最后更新: 2026-06-23  
+> 状态: Phase 1-3 已完成，批量处理已实现
 
 ---
 
@@ -46,44 +47,57 @@ aiVideoAgent/
 ├── .env                        # 敏感信息 (如有)
 ├── .gitignore
 ├── README.md
+├── ROADMAP.md                  # 实施路线图
+├── ARCHITECTURE.md             # 本文档
 │
 ├── src/
 │   ├── __init__.py
 │   ├── main.py                 # CLI 入口 (typer)
+│   ├── pipeline.py             # 单视频全流程接口 (process_video)
 │   │
 │   ├── transcribe/
 │   │   ├── __init__.py
-│   │   └── whisper_engine.py   # Whisper 封装
-│   │                           #   - load_model()
-│   │                           #   - transcribe_video() → TranscriptResult
-│   │                           #   - export_srt()
+│   │   ├── whisper_engine.py   # Whisper 封装
+│   │   │                           #   - load_model()
+│   │   │                           #   - transcribe() → TranscriptResult
+│   │   │                           #   - unload()
+│   │   └── models.py           # 数据模型 (Segment, TranscriptResult)
 │   │
 │   ├── analyze/
 │   │   ├── __init__.py
 │   │   └── llm_analyzer.py     # LLM 分析引擎
-│   │                           #   - summarize() → 视频总结
-│   │                           #   - extract_highlights() → 亮点片段列表
-│   │                           #   - build_report() → Markdown 报告
+│   │                           #   - analyze() → AnalysisReport
+│   │                           #   - Highlight, AnalysisReport (dataclass)
 │   │
 │   ├── edit/
 │   │   ├── __init__.py
-│   │   └── clipper.py          # (TODO) 视频剪辑模块
-│   │                           #   - clip_segments() → 根据 JSON 剪辑
+│   │   └── clipper.py          # 视频剪辑模块 (已完成)
+│   │                           #   - clips_from_report() → 从 JSON 一键提取
+│   │                           #   - extract_segment() → 单个片段裁剪
+│   │                           #   - merge_clips() → 拼接精华视频
+│   │
+│   ├── batch/
+│   │   └── __init__.py         # 批量处理模块 (已完成)
+│   │                           #   - discover_videos() → 发现视频文件
+│   │                           #   - run_batch() → 串行批处理
+│   │                           #   - BatchResult → 批处理结果聚合
 │   │
 │   └── utils/
 │       ├── __init__.py
 │       ├── video_info.py       # 视频元信息 (时长、分辨率、编码)
-│       ├── io.py               # 文件 I/O (SRT 读写、JSON 序列化)
-│       └── prompts.py          # LLM prompt 管理
+│       └── io.py               # 文件 I/O (SRT 读写、JSON 序列化、报告导出)
 │
 ├── prompts/
 │   ├── system.md               # LLM system prompt
 │   └── highlight_extract.md    # 亮点提取 prompt 模板
 │
 ├── outputs/                    # 输出目录 (gitignore)
-│   ├── subtitles/              # SRT 文件
+│   ├── subtitles/              # SRT + JSON 字幕文件
 │   ├── reports/                # JSON + Markdown 报告
-│   └── clips/                  # (未来) 剪辑后的视频
+│   └── clips/                  # 剪辑后的视频片段 + 精华视频
+│
+├── logs/
+│   └── CHANGELOG.md            # 变更记录
 │
 └── tests/
     ├── test_transcribe.py
@@ -199,8 +213,18 @@ videoagent transcribe input.mkv --language zh --output-dir ./outputs
 # 分析字幕 → 报告
 videoagent analyze ./outputs/subtitles/input.json --output-dir ./outputs
 
-# 一键全流程
-videoagent pipeline input.mkv --language zh --output-dir ./outputs
+# 从报告提取亮点片段
+videoagent clip ./outputs/reports/input.json --merge --min-score 0.7
+
+# 一键全流程 (转录 + 分析)
+videoagent pipeline input.mkv --language zh
+
+# 一键全流程 + 自动剪辑
+videoagent pipeline input.mkv --clip --min-score 0.7
+
+# 批量处理多个视频
+videoagent batch "D:/videos/" --clip --min-score 0.7
+videoagent batch "D:/videos/*.mp4" --clip --no-merge
 
 # 查看帮助
 videoagent --help
@@ -287,27 +311,46 @@ test = ["pytest>=8.0", "pytest-asyncio"]
 
 ## 九、实施路线图
 
-### Phase 1: 基础管线 (当前)
-- [ ] 项目脚手架 (pyproject.toml, 目录结构)
-- [ ] Whisper 转录模块封装
-- [ ] CLI 入口 (typer)
-- [ ] SRT 导出
+### Phase 1: 基础管线 ✅ 已完成
+- [x] 项目脚手架 (pyproject.toml, 目录结构)
+- [x] Whisper 转录模块封装
+- [x] CLI 入口 (typer)
+- [x] SRT + JSON + Markdown 导出
 
-### Phase 2: LLM 分析
-- [ ] Ollama/Qwen 接入
-- [ ] Prompt 工程
-- [ ] JSON 报告生成
-- [ ] Markdown 报告生成
+### Phase 2: LLM 分析 ✅ 已完成
+- [x] llama.cpp/Qwen 接入 (OpenAI 兼容 API)
+- [x] Prompt 工程
+- [x] JSON 报告生成
+- [x] Markdown 报告生成
+- [x] 长上下文自动截断
+- [x] JSON 多级容错解析
 
-### Phase 3: 自动剪辑 (未来)
-- [ ] ffmpeg 剪辑模块
-- [ ] 根据 JSON 自动裁剪 + 拼接
-- [ ] 转场效果
+### Phase 3: 自动剪辑 ✅ 已完成
+- [x] ffmpeg 剪辑模块 (`src/edit/clipper.py`)
+- [x] 根据 JSON 自动裁剪 + 拼接
+- [x] 交叉淡入淡出转场
+- [x] concat 直拼模式
+- [x] `clips_from_report()` 一键提取接口
 
-### Phase 4: Web 服务 (未来)
+### Phase 3.5: 全流程接口 + 批量处理 ✅ 已完成
+- [x] `process_video()` 单视频全流程接口 (`src/pipeline.py`)
+- [x] 独立资源管理（每次调用创建/释放实例）
+- [x] 批量处理模块 (`src/batch/`)
+- [x] 视频发现（文件/目录/glob）
+- [x] CSV 汇总报告
+- [x] CLI `batch` 命令
+
+### Phase 4: 功能增强 (进行中)
+- [ ] 并发控制 (`--workers N`)
+- [ ] 剪辑后处理增强（字幕烧录、封面生成、元数据嵌入）
+- [ ] 长视频分段转录策略
+- [ ] 智能片段筛选（去重、时长约束、多轮分析）
+
+### Phase 5: Web 服务 (未来)
 - [ ] FastAPI 服务化
-- [ ] Web UI
+- [ ] Web UI (NiceGUI → Tauri)
 - [ ] 批量处理队列
+- [ ] 任务进度实时推送
 
 ---
 

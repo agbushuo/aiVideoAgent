@@ -373,6 +373,72 @@ def pipeline(
     console.print(f"  报告 Markdown: {report_md_path}")
 
 
+@app.command(name="batch")
+def batch(
+    input_path: str = typer.Argument(..., help="视频文件/目录/glob 模式"),
+    language: str = typer.Option("zh", "--language", "-l", help="字幕语言代码"),
+    output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="输出目录"),
+    clip: bool = typer.Option(
+        False, "--clip",
+        help="分析完成后自动提取亮点片段",
+    ),
+    min_score: float | None = typer.Option(
+        None, "--min-score",
+        help="剪辑时最低评分阈值（仅 --clip 时生效）",
+    ),
+    merge_clips: bool = typer.Option(
+        True, "--merge/--no-merge",
+        help="是否拼接精华视频（仅 --clip 时生效）",
+    ),
+    transition: float = typer.Option(
+        0.5, "--transition",
+        help="转场时长（秒），0 表示直接拼接",
+    ),
+):
+    """批量处理多个视频（串行，每个视频独立运行）
+
+    支持：
+    - 单个文件: videoagent batch input.mp4
+    - 目录递归: videoagent batch D:/videos/
+    - glob 模式: videoagent batch "D:/videos/*.mp4"
+
+    示例:
+      # 批量处理目录下所有视频（转录 + 分析）
+      videoagent batch "D:/videos/"
+
+      # 转录 + 分析 + 自动剪辑
+      videoagent batch "D:/videos/" --clip
+
+      # 只剪辑评分 >= 0.7 的亮点
+      videoagent batch "D:/videos/*.mp4" --clip --min-score 0.7
+    """
+    from src.batch import run_batch
+
+    output_dir = get_output_dir(output_dir)
+
+    console.print(f"[bold blue]VideoAgent[/bold blue] - 批量处理")
+    console.print(f"  输入: {input_path}")
+    console.print(f"  输出: {output_dir}")
+    console.print(f"  语言: {language}")
+    console.print(f"  剪辑: {'是' if clip else '否'}")
+    console.rule()
+
+    result = run_batch(
+        input_path,
+        output_dir=output_dir,
+        language=language,
+        clip=clip,
+        min_score=min_score,
+        merge_clips=merge_clips,
+        transition_duration=transition,
+    )
+
+    console.print(f"\n[bold green]✓ 批量处理完成![/bold green]")
+    console.print(f"  成功: {result.success_count}/{len(result.items)}")
+    if result.summary_csv_path:
+        console.print(f"  汇总 CSV: {result.summary_csv_path}")
+
+
 @app.command(name="version")
 def version():
     """显示版本信息"""
