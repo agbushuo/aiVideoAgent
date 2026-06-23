@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from src.analyze.llm_analyzer import AnalysisReport
+from src.analyze.llm_analyzer import AnalysisReport, Highlight
 from src.transcribe.models import Segment, TranscriptResult
 
 
@@ -131,6 +131,7 @@ def export_analysis_json(report: AnalysisReport, output_path: str | Path) -> Pat
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     data = {
+        "video_path": report.video_path,
         "summary": report.summary,
         "highlights": [
             {
@@ -155,6 +156,51 @@ def export_analysis_json(report: AnalysisReport, output_path: str | Path) -> Pat
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return output_path
+
+
+def load_analysis_json(input_path: str | Path) -> AnalysisReport:
+    """
+    从 JSON 文件加载分析报告
+
+    Args:
+        input_path: 分析报告 JSON 文件路径
+
+    Returns:
+        AnalysisReport
+
+    Example:
+        >>> report = load_analysis_json("outputs/reports/testvideo.json")
+        >>> print(report.summary)
+        >>> for h in report.highlights:
+        ...     print(f"{h.title}: {h.start:.1f}s - {h.end:.1f}s")
+    """
+    input_path = Path(input_path)
+    data = json.loads(input_path.read_text(encoding="utf-8"))
+
+    highlights = []
+    for h in data.get("highlights", []):
+        highlights.append(
+            Highlight(
+                segment_id=h.get("segment_id", 0),
+                start=h.get("start", 0.0),
+                end=h.get("end", 0.0),
+                title=h.get("title", ""),
+                reason=h.get("reason", ""),
+                score=float(h.get("score", 0.5)),
+            )
+        )
+
+    metadata = data.get("metadata", {})
+
+    return AnalysisReport(
+        summary=data.get("summary", ""),
+        highlights=highlights,
+        video_path=data.get("video_path", ""),
+        language=metadata.get("language", ""),
+        duration=metadata.get("duration", 0.0),
+        model=metadata.get("model", ""),
+        analyzed_at=metadata.get("analyzed_at", ""),
+    )
 
 
 def export_markdown_report(report: AnalysisReport, output_path: str | Path) -> Path:

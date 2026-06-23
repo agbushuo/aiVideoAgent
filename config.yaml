@@ -35,9 +35,9 @@ llm:
 
 ffmpeg:
   # ffmpeg 可执行文件路径
-  path: "D:\\AI\\AudioAI\\ffmpeg.exe"
+  path: "D:\\AI\\AudioAI\\FFmpeg\\bin\\ffmpeg.exe"
   # ffprobe 路径 (通常与 ffmpeg 同目录)
-  probe_path: "D:\\AI\\AudioAI\\ffprobe.exe"
+  probe_path: "D:\\AI\\AudioAI\\FFmpeg\\bin\\ffprobe.exe"
 
 output:
   # 默认输出目录

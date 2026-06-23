@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python test_json_parser.py)"
+      "Bash(python test_json_parser.py)",
+      "Bash(findstr /s /i \".mp4\\\\|.mkv\" D:/AI/Projects/aiVideoAgent/src/main.py)",
+      "Read(//d/AI/AudioAI/**)",
+      "Bash(ffmpeg -version)",
+      "Bash(ffprobe -v quiet -print_format json -show_format D:/AI/Projects/aiVideoAgent/testvideo.mp4)",
+      "Bash(python -m src.main clip outputs/reports/testvideo.json -v testvideo.mp4)",
+      "Bash(python -B -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 python -B -m src.main clip outputs/reports/testvideo.json -v testvideo.mp4 --no-merge)",
+      "Bash(PYTHONIOENCODING=utf-8 python -B -m src.main clip outputs/reports/testvideo.json -v testvideo.mp4)",
+      "Bash(ffmpeg -y -i clip_01_四连高炉炼钢与挂机技巧.mp4 -i clip_02_LV时代核心机器与产能翻倍.mp4 -filter_complex \"[0:v]setpts=PTS-STARTPTS[v0];[1:v]setpts=PTS-STARTPTS[v1];[v0][v1]xfade=transition=fade:duration=0.5:offset=20.4[vout];[0:a]asetpts=PTS-STARTPTS[a0];[1:a]asetpts=PTS-STARTPTS[a1];[a0][a1]acrossfade=d=0.5[aout]\" -map \"[vout]\" -map \"[aout]\" -c:v libx264 -crf 23 -c:a aac test2.mp4)",
+      "Bash(ffmpeg -y -i clip_01_四连高炉炼钢与挂机技巧.mp4 -i clip_02_LV时代核心机器与产能翻倍.mp4 -filter_complex \"[0:v]setpts=PTS-STARTPTS,scale=trunc\\(iw/2\\)*2:trunc\\(ih/2\\)*2,format=yuv420p,[v0];[1:v]setpts=PTS-STARTPTS,scale=trunc\\(iw/2\\)*2:trunc\\(ih/2\\)*2,format=yuv420p,[v1];[v0][v1]xfade=transition=fade:duration=0.5:offset=20.4:[vout];[0:a]asetpts=PTS-STARTPTS,[a0];[1:a]asetpts=PTS-STARTPTS,[a1];[a0][a1]acrossfade=duration=0.5:[aout]\" -map \"[vout]\" -map \"[aout]\" -c:v libx264 -crf 23 -c:a aac test3.mp4)",
+      "Bash(ffmpeg -y -i clip_01_四连高炉炼钢与挂机技巧.mp4 -i clip_02_LV时代核心机器与产能翻倍.mp4 -filter_complex \"[0:v]setpts=PTS-STARTPTS,format=yuv420p[v0];[1:v]setpts=PTS-STARTPTS,format=yuv420p[v1];[v0][v1]xfade=transition=fade:duration=0.5:offset=20.4[vout];[0:a]asetpts=PTS-STARTPTS[a0];[1:a]asetpts=PTS-STARTPTS[a1];[a0][a1]acrossfade=d=0.5[aout]\" -map \"[vout]\" -map \"[aout]\" -c:v libx264 -crf 23 -c:a aac test4.mp4)",
+      "Bash(ffprobe -v info D:/AI/Projects/aiVideoAgent/outputs/clips/highlights_merged.mp4)"
     ]
   }
 }

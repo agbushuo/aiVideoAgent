@@ -8,7 +8,7 @@ from rich.console import Console
 
 app = typer.Typer(
     name="videoagent",
-    help="视频自动化处理 Agent: 视频 -> 字幕 -> 总结 -> 亮点分析",
+    help="视频自动化处理 Agent: 视频 -> 字幕 -> 总结 -> 亮点分析 -> 自动剪辑",
     add_completion=False,
 )
 
@@ -47,6 +47,21 @@ def _build_analyzer(llm_config: dict) -> "LLMAnalyzer":
         timeout=llm_config.get("timeout", 600),
         context_size=llm_config.get("context_size", 131072),
     )
+
+
+def _build_clipper(ffmpeg_config: dict) -> "Clipper":
+    """从配置构建 Clipper"""
+    from src.edit.clipper import Clipper
+
+    return Clipper(
+        ffmpeg_path=ffmpeg_config.get("path", "ffmpeg"),
+        ffprobe_path=ffmpeg_config.get("probe_path", "ffprobe"),
+    )
+
+
+# ====================================================================== #
+#  Commands
+# ====================================================================== #
 
 
 @app.command(name="transcribe")
@@ -100,6 +115,10 @@ def transcribe(
 @app.command(name="analyze")
 def analyze(
     transcript_path: str = typer.Argument(..., help="字幕 JSON 文件路径"),
+    video_path: str | None = typer.Option(
+        None, "--video", "-v",
+        help="源视频路径（记录到报告中，供剪辑使用）",
+    ),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="输出目录"),
 ):
     """使用 LLM 分析字幕，生成亮点报告"""
@@ -123,6 +142,13 @@ def analyze(
     base_name = Path(transcript_path).stem
     report = analyzer.analyze(transcript)
 
+    # 记录源视频路径到报告中
+    if video_path:
+        report.video_path = video_path
+    elif not report.video_path:
+        # 尝试从字幕文件名推断
+        report.video_path = f"{base_name}.mkv"
+
     from src.utils.io import export_analysis_json, export_markdown_report
 
     json_path = reports_dir / f"{base_name}.json"
@@ -135,6 +161,89 @@ def analyze(
     console.print(f"  JSON: {json_path}")
     console.print(f"  Markdown: {md_path}")
     console.print(f"  亮点数: {len(report.highlights)}")
+    if report.video_path:
+        console.print(f"  源视频: {report.video_path}")
+
+
+@app.command(name="clip")
+def clip(
+    report_path: str = typer.Argument(..., help="分析报告 JSON 路径"),
+    video_path: str | None = typer.Option(
+        None, "--video", "-v",
+        help="源视频路径（可选，优先从报告中读取）",
+    ),
+    output_dir: str | None = typer.Option(
+        None, "--output-dir", "-o",
+        help="输出目录（默认 reports 同级 clips/ 目录）",
+    ),
+    merge: bool = typer.Option(
+        True, "--merge/--no-merge",
+        help="是否拼接精华视频",
+    ),
+    transition: float = typer.Option(
+        0.5, "--transition",
+        help="转场时长（秒），0 表示直接拼接",
+    ),
+    min_score: float | None = typer.Option(
+        None, "--min-score",
+        help="最低评分阈值，低于此值的亮点将被跳过",
+    ),
+):
+    """从分析报告提取亮点片段（基于 ffmpeg）
+
+    读取分析报告中的 highlights，自动裁剪对应片段并可选拼接精华视频。
+
+    示例:
+      # 从报告提取所有亮点（视频路径从报告中读取）
+      videoagent clip outputs/reports/testvideo.json
+
+      # 指定源视频路径
+      videoagent clip outputs/reports/testvideo.json -v input.mp4
+
+      # 只提取评分 >= 0.8 的亮点，不拼接
+      videoagent clip outputs/reports/testvideo.json -v input.mp4 --no-merge --min-score 0.8
+    """
+    config = load_config()
+    ffmpeg_config = config.get("ffmpeg", {})
+
+    console.print(f"[bold blue]VideoAgent[/bold blue] - 提取亮点片段")
+    console.print(f"  报告: {report_path}")
+    console.print(f"  ffmpeg: {ffmpeg_config.get('path', 'ffmpeg')}")
+
+    clipper = _build_clipper(ffmpeg_config)
+
+    if output_dir:
+        output_dir = Path(output_dir)
+
+    result = clipper.clips_from_report(
+        report_path=report_path,
+        video_path=video_path,
+        output_dir=output_dir,
+        merge=merge,
+        merge_transition=transition if merge else None,
+        filter_by_score=min_score,
+    )
+
+    console.print(f"\n[green]✓[/green] 剪辑完成")
+    console.print(f"  成功: {result.success_count} 个片段")
+    console.print(f"  总时长: {result.total_duration:.1f} 秒")
+
+    if result.clips:
+        console.print(f"\n  独立片段:")
+        for c in result.clips:
+            status = "[green]✓[/green]" if c.success else "[red]✗[/red]"
+            console.print(
+                f"    {status} {c.clip_path.name} "
+                f"({c.start:.1f}s - {c.end:.1f}s, {c.duration:.1f}s)"
+            )
+
+    if result.merged_path:
+        console.print(f"\n  精华视频: [green]{result.merged_path}[/green]")
+
+    if result.errors:
+        console.print(f"\n  错误:")
+        for err in result.errors:
+            console.print(f"    [red]✗[/red] {err}")
 
 
 @app.command(name="pipeline")
@@ -142,8 +251,27 @@ def pipeline(
     video_path: str = typer.Argument(..., help="视频文件路径"),
     language: str = typer.Option("zh", "--language", "-l", help="字幕语言代码"),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="输出目录"),
+    clip: bool = typer.Option(
+        False, "--clip",
+        help="分析完成后自动提取亮点片段",
+    ),
+    min_score: float | None = typer.Option(
+        None, "--min-score",
+        help="剪辑时最低评分阈值（仅 --clip 时生效）",
+    ),
 ):
-    """一键全流程: 转录 -> 分析 -> 输出报告"""
+    """一键全流程: 转录 -> 分析 -> (可选) 剪辑
+
+    示例:
+      # 转录 + 分析
+      videoagent pipeline input.mp4
+
+      # 转录 + 分析 + 自动剪辑
+      videoagent pipeline input.mp4 --clip
+
+      # 只剪辑评分 >= 0.8 的亮点
+      videoagent pipeline input.mp4 --clip --min-score 0.8
+    """
     config = load_config()
 
     console.print("[bold blue]VideoAgent[/bold blue] - 全流程处理")
@@ -155,7 +283,7 @@ def pipeline(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Stage 1: 转录
-    console.print("[bold]Stage 1/2[/bold]: Whisper 转录...")
+    console.print("[bold]Stage 1/3[/bold]: Whisper 转录...")
     from src.transcribe.whisper_engine import WhisperEngine
 
     whisper_config = config.get("whisper", {})
@@ -175,20 +303,23 @@ def pipeline(
     subtitles_dir.mkdir(parents=True, exist_ok=True)
 
     srt_path = subtitles_dir / f"{base_name}.srt"
-    json_path = subtitles_dir / f"{base_name}.json"
+    subtitle_json_path = subtitles_dir / f"{base_name}.json"
 
     export_srt(transcript, srt_path)
-    export_transcript_json(transcript, json_path)
+    export_transcript_json(transcript, subtitle_json_path)
 
     console.print(f"[green]✓[/green] 转录完成 ({len(transcript.segments)} 个片段)")
     console.rule()
 
     # Stage 2: 分析
-    console.print("[bold]Stage 2/2[/bold]: LLM 分析...")
+    console.print("[bold]Stage 2/3[/bold]: LLM 分析...")
     llm_config = config.get("llm", {})
     analyzer = _build_analyzer(llm_config)
 
     report = analyzer.analyze(transcript)
+
+    # 记录源视频路径
+    report.video_path = video_path
 
     from src.utils.io import export_analysis_json, export_markdown_report
 
@@ -204,9 +335,40 @@ def pipeline(
     console.print(f"[green]✓[/green] 分析完成 ({len(report.highlights)} 个亮点)")
     console.rule()
 
+    # Stage 3: 剪辑 (可选)
+    if clip:
+        console.print("[bold]Stage 3/3[/bold]: ffmpeg 剪辑...")
+        ffmpeg_config = config.get("ffmpeg", {})
+        clipper = _build_clipper(ffmpeg_config)
+
+        clip_result = clipper.clips_from_report(
+            report_path=report_json_path,
+            video_path=video_path,
+            filter_by_score=min_score,
+        )
+
+        console.print(f"[green]✓[/green] 剪辑完成")
+        console.print(f"  成功: {clip_result.success_count} 个片段")
+
+        for c in clip_result.clips:
+            status = "[green]✓[/green]" if c.success else "[red]✗[/red]"
+            console.print(
+                f"    {status} {c.clip_path.name} "
+                f"({c.start:.1f}s - {c.end:.1f}s)"
+            )
+
+        if clip_result.merged_path:
+            console.print(f"  精华视频: [green]{clip_result.merged_path}[/green]")
+
+        if clip_result.errors:
+            for err in clip_result.errors:
+                console.print(f"    [red]✗[/red] {err}")
+
+        console.rule()
+
     console.print("[bold green]✓ 全流程完成![/bold green]")
     console.print(f"  字幕 SRT:  {srt_path}")
-    console.print(f"  字幕 JSON: {json_path}")
+    console.print(f"  字幕 JSON: {subtitle_json_path}")
     console.print(f"  报告 JSON: {report_json_path}")
     console.print(f"  报告 Markdown: {report_md_path}")
 
