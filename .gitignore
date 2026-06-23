@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Outputs (generated files)
+outputs/
+
+# Environment variables
+.env
+.env.local
+
+# Model caches (if not using HFCache)
+.cache/whisper/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp

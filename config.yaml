@@ -1,0 +1,51 @@
+# VideoAgent 配置文件
+
+whisper:
+  # 模型路径 (留空则使用默认缓存路径)
+  # 注意: D 盘复制已完成
+  model_path: "D:\\AI\\HFCache\\whisper\\large-v3.pt"
+  # 模型名称 (如果 model_path 为空)
+  model_name: "large-v3"
+  # 设备: auto / cuda / cpu
+  device: "auto"
+  # 是否使用 FP16 (CUDA 时生效)
+  fp16: true
+  # 默认语言
+  default_language: "zh"
+
+llm:
+  # LLM 提供商: llama_cpp / openai / ollama
+  provider: "llama_cpp"
+  # 模型名称
+  model: "Qwen3.6-27B-Q4_K_M.gguf"
+  # API 端点 (llama.cpp 默认 8080)
+  endpoint: "http://localhost:8080/v1"
+  # API key (llama.cpp 通常不需要，留空即可)
+  api_key: ""
+  # 超时时间 (秒)
+  timeout: 300
+  # 温度 (0-1，越低越确定)
+  temperature: 0.3
+  # 最大输出 token 数 (LLM 响应长度)
+  # 长视频分析建议 8192~16384
+  max_tokens: 16384
+  # LLM 上下文窗口大小 (仅供参考，实际由 llama.cpp --ctx-size 控制)
+  # 100k 上下文建议 --ctx-size 131072
+  context_size: 131072
+
+ffmpeg:
+  # ffmpeg 可执行文件路径
+  path: "D:\\AI\\AudioAI\\ffmpeg.exe"
+  # ffprobe 路径 (通常与 ffmpeg 同目录)
+  probe_path: "D:\\AI\\AudioAI\\ffprobe.exe"
+
+output:
+  # 默认输出目录
+  default_dir: "./outputs"
+  # 输出格式列表
+  formats:
+    - srt
+    - json
+    - markdown
+  # 文件名时间格式
+  timestamp_format: "%Y%m%d_%H%M%S"

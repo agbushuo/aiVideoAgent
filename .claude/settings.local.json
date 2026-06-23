@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python test_json_parser.py)"
+    ]
+  }
+}
