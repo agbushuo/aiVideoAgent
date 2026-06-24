@@ -59,17 +59,116 @@
 
 ---
 
-### 3. 长视频分段转录策略
+### 3. 长视频分段转录策略（Segment-aware 升级）
 
 Whisper 处理超长视频（>1 小时）时容易 OOM，需要分段策略。
+核心原则：**按 Whisper segment 边界对齐切分，而非固定时间切分**，避免句子断裂。
 
-**功能设计：**
-- 按固定时长（如 30 分钟）切分音频 → 分别转录 → 合并时间戳
-- 或使用 Whisper 的 `chunk_size` 参数做流式处理
-- 自动检测视频时长，超过阈值时切换分段模式
-- 分段结果无缝合并，对上层透明
+#### 3.1 音频预处理（Step 0）
+
+**涉及文件：** 新增 `src/utils/audio_preprocess.py`
+
+- FFmpeg 统一格式转换：16kHz mono WAV
+- 可选 loudness normalize（提升噪声视频质量）
+- 提取音频后释放原视频，减少内存占用
+
+```
+Video Input → FFmpeg extract → 16kHz mono WAV → Whisper Pipeline
+```
+
+#### 3.2 音频粗切 + 时间 Overlap（Step 1）
 
 **涉及文件：** `src/transcribe/whisper_engine.py`（新增分段逻辑）
+
+- 按固定时长粗切音频（默认 15min/chunk）
+- 每个 chunk 前后添加时间 overlap（默认 10s），覆盖 3-5 个 Whisper segment
+- 自动检测音频时长，超过阈值时切换分段模式
+
+```
+Audio (60min)
+  → Chunk A: 0:00 - 15:00 (overlap: 0:00 - 0:10)
+  → Chunk B: 14:50 - 30:00 (overlap: 14:50 - 15:10)
+  → Chunk C: 29:50 - 45:00 (overlap: 29:50 - 30:10)
+  → Chunk D: 44:50 - 60:00 (overlap: 44:50 - 45:10)
+```
+
+#### 3.3 Whisper Segment 级去重合并（Step 2，核心）
+
+**涉及文件：** 新增 `src/transcribe/merger.py`
+
+- 每个 chunk 转录后，给 segment 加上全局时间戳偏移
+- 所有 segment 按时间排序后，按 **segment 边界** 做去重（非按时间）
+- 相邻 segment 做文本相似度比对（Levenshtein / 前 N 字符模糊匹配）
+  - 相似度 > 0.8 → 判定为 overlap 重复，保留时间范围更广的那个
+  - 相似度 < 0.8 → 保留两者
+- **关键优势**：不会出现"半句话保留、半句话丢弃"的情况，总是整段保留或整段丢弃
+
+```
+Chunk A 输出 segment: [..., S2(14:20-14:35), S3(14:35-14:52)]
+Chunk B 输出 segment: [S1'(14:50-15:08), S2'(15:08-15:25), ...]
+
+合并去重逻辑：
+  S3.text vs S1'.text → similarity 0.92 → 判定重复 → 保留 S1'（全局时间更准）
+  最终: [..., S2(14:20-14:35), S1'(14:50-15:08), S2'(15:08-15:25), ...]
+```
+
+#### 3.4 统一合并输出层（Step 3）
+
+**涉及文件：** `src/transcribe/merger.py` + `src/transcribe/models.py`（扩展）
+
+- 输出结构化 segment 列表（统一格式）：
+  ```json
+  [
+    {"start": 12.3, "end": 18.9, "text": "..."},
+    {"start": 18.9, "end": 25.1, "text": "..."}
+  ]
+  ```
+- 分段结果对上层透明 — `TranscriptResult` 接口不变
+- 可选：LLM 标点修复后处理（后续做，见中期目标 5）
+
+#### 3.5 Whisper 执行策略优化
+
+**涉及文件：** `src/transcribe/whisper_engine.py`
+
+- `beam_size >= 5`（提升边界准确率）
+- temperature fallback（首次 0，失败时 0.5）
+- 默认 `large-v3`，不引入 retry 策略（准确率已足够，retry 收益低）
+
+#### 3.6 不做 VAD 的理由（当前阶段）
+
+- 目标场景（游戏录播/直播）说话人不固定、背景音复杂，VAD 误判率高
+- Whisper 自身按句子输出 segment，segment-aware 方案已经解决边界问题
+- 如果后续发现边界问题多，再引入 `silero-vad` 作为可选预处理步骤
+
+#### 完整流水线
+
+```
+Video Input
+   ↓
+FFmpeg extract audio → 16kHz mono WAV
+   ↓
+Audio chunking (15min + 10s overlap)
+   ↓
+Whisper batch processing (per chunk)
+   ↓
+Global timestamp normalization
+   ↓
+Segment-level overlap deduplication  ← 核心升级
+   ↓
+Final TranscriptResult (transparent to upstream)
+   ↓
+LLM Analyze → Clip (unchanged)
+```
+
+#### 实施顺序
+
+| 步骤 | 内容 | 预估时间 | 依赖 |
+|------|------|----------|------|
+| 3.1 | 音频预处理 | 半天 | 无 |
+| 3.2 | 音频粗切 + overlap | 1 天 | 3.1 |
+| 3.3 | Segment 级去重合并 | 1-2 天 | 3.2 |
+| 3.4 | 统一输出层 | 半天 | 3.3 |
+| 3.5 | Whisper 参数优化 | 半天 | 无 |
 
 ---
 

@@ -1,5 +1,17 @@
 # 变更记录
 
+## 2026-06-24
+
+### 长视频分段转录策略升级为 Segment-aware 方案
+- **更新** `ROADMAP.md`：将"3. 长视频分段转录策略"从固定时间切分替换为 segment-aware 方案
+  - 新增 3.1 音频预处理（16kHz mono WAV, loudness normalize）
+  - 新增 3.2 音频粗切 + 时间 overlap（15min/chunk, 10s overlap）
+  - 新增 3.3 Whisper segment 级去重合并（核心升级，Levenshtein 相似度 > 0.8 去重）
+  - 新增 3.4 统一合并输出层（结构化 segment 列表，对上层透明）
+  - 新增 3.5 Whisper 执行策略优化（beam_size >= 5, temperature fallback）
+  - 新增 3.6 不做 VAD 的理由说明
+  - 新增完整流水线图和实施顺序表
+
 ## 2026-06-23
 
 ### 单视频全流程接口 + 批处理模块
