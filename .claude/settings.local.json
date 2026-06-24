@@ -3,7 +3,8 @@
     "allow": [
       "Bash(where ffmpeg *)",
       "Bash(where ffprobe *)",
-      "Bash(python -m src.main batch \"E:/video/沧浪之水/\" --clip --min-score 0.7 -o outputs/)"
+      "Bash(python -m src.main batch \"E:/video/沧浪之水/\" --clip --min-score 0.7 -o outputs/)",
+      "Bash(ls -la \"E:/video/沧浪之水/\" 2>/dev/null || echo \"目录不存在或无法访问\")"
     ]
   }
 }

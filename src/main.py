@@ -49,6 +49,33 @@ def _build_analyzer(llm_config: dict) -> "LLMAnalyzer":
     )
 
 
+def _build_whisper_engine(whisper_config: dict) -> "WhisperEngine":
+    """从配置构建 WhisperEngine"""
+    from src.transcribe.whisper_engine import WhisperEngine
+
+    seg_cfg = whisper_config.get("segment_transcribe", {})
+    ffmpeg_cfg = load_config().get("ffmpeg", {})
+
+    return WhisperEngine(
+        model_path=whisper_config.get("model_path"),
+        model_name=whisper_config.get("model_name", "large-v3"),
+        device=whisper_config.get("device", "auto"),
+        fp16=whisper_config.get("fp16", True),
+        # 分段转录配置
+        chunk_duration=seg_cfg.get("chunk_duration", 900.0),
+        overlap=seg_cfg.get("overlap", 10.0),
+        segment_threshold_minutes=seg_cfg.get("threshold_minutes", 30.0),
+        similarity_threshold=seg_cfg.get("similarity_threshold", 0.8),
+        normalize_loudness=seg_cfg.get("normalize_loudness", False),
+        # ffmpeg 路径
+        ffmpeg_path=ffmpeg_cfg.get("path", "ffmpeg"),
+        ffprobe_path=ffmpeg_cfg.get("probe_path", "ffprobe"),
+        # Whisper 参数优化
+        beam_size=seg_cfg.get("beam_size", 5),
+        temperature_fallback=seg_cfg.get("temperature_fallback", True),
+    )
+
+
 def _build_clipper(ffmpeg_config: dict) -> "Clipper":
     """从配置构建 Clipper"""
     from src.edit.clipper import Clipper
@@ -67,26 +94,19 @@ def _build_clipper(ffmpeg_config: dict) -> "Clipper":
 @app.command(name="transcribe")
 def transcribe(
     video_path: str = typer.Argument(..., help="视频文件路径"),
-    language: str = typer.Option("zh", "--language", "-l", help="字幕语言代码"),
+    language: str | None = typer.Option(None, "--language", "-l", help="字幕语言代码（None 则自动检测）"),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="输出目录"),
 ):
     """使用 Whisper 转录视频生成字幕"""
-    from src.transcribe.whisper_engine import WhisperEngine
-
     config = load_config()
     whisper_config = config.get("whisper", {})
 
     console.print(f"[bold blue]VideoAgent[/bold blue] - 转录视频")
     console.print(f"  视频: {video_path}")
-    console.print(f"  语言: {language}")
+    console.print(f"  语言: {language or 'auto'}")
     console.print(f"  模型: {whisper_config.get('model_name', 'large-v3')}")
 
-    engine = WhisperEngine(
-        model_path=whisper_config.get("model_path"),
-        model_name=whisper_config.get("model_name", "large-v3"),
-        device=whisper_config.get("device", "auto"),
-        fp16=whisper_config.get("fp16", True),
-    )
+    engine = _build_whisper_engine(whisper_config)
 
     output_dir = get_output_dir(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -249,7 +269,7 @@ def clip(
 @app.command(name="pipeline")
 def pipeline(
     video_path: str = typer.Argument(..., help="视频文件路径"),
-    language: str = typer.Option("zh", "--language", "-l", help="字幕语言代码"),
+    language: str | None = typer.Option(None, "--language", "-l", help="字幕语言代码（None 则自动检测）"),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="输出目录"),
     clip: bool = typer.Option(
         False, "--clip",
@@ -276,7 +296,7 @@ def pipeline(
 
     console.print("[bold blue]VideoAgent[/bold blue] - 全流程处理")
     console.print(f"  视频: {video_path}")
-    console.print(f"  语言: {language}")
+    console.print(f"  语言: {language or 'auto'}")
     console.rule()
 
     output_dir = get_output_dir(output_dir)
@@ -284,15 +304,9 @@ def pipeline(
 
     # Stage 1: 转录
     console.print("[bold]Stage 1/3[/bold]: Whisper 转录...")
-    from src.transcribe.whisper_engine import WhisperEngine
 
     whisper_config = config.get("whisper", {})
-    engine = WhisperEngine(
-        model_path=whisper_config.get("model_path"),
-        model_name=whisper_config.get("model_name", "large-v3"),
-        device=whisper_config.get("device", "auto"),
-        fp16=whisper_config.get("fp16", True),
-    )
+    engine = _build_whisper_engine(whisper_config)
 
     transcript = engine.transcribe(video_path, language=language)
 
@@ -376,7 +390,7 @@ def pipeline(
 @app.command(name="batch")
 def batch(
     input_path: str = typer.Argument(..., help="视频文件/目录/glob 模式"),
-    language: str = typer.Option("zh", "--language", "-l", help="字幕语言代码"),
+    language: str | None = typer.Option(None, "--language", "-l", help="字幕语言代码（None 则自动检测）"),
     output_dir: str | None = typer.Option(None, "--output-dir", "-o", help="输出目录"),
     clip: bool = typer.Option(
         False, "--clip",
@@ -419,7 +433,7 @@ def batch(
     console.print(f"[bold blue]VideoAgent[/bold blue] - 批量处理")
     console.print(f"  输入: {input_path}")
     console.print(f"  输出: {output_dir}")
-    console.print(f"  语言: {language}")
+    console.print(f"  语言: {language or 'auto'}")
     console.print(f"  剪辑: {'是' if clip else '否'}")
     console.rule()
 

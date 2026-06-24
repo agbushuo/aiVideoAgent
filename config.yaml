@@ -13,6 +13,23 @@ whisper:
   # 默认语言
   default_language: "zh"
 
+  # ─── 分段转录配置（长视频 > 阈值时自动启用） ───
+  segment_transcribe:
+    # 分段阈值（分钟），超过此时长自动启用分段转录
+    threshold_minutes: 30
+    # 每个 chunk 的时长（秒），默认 15 分钟
+    chunk_duration: 900
+    # 相邻 chunk 重叠时长（秒），覆盖 3-5 个 Whisper segment
+    overlap: 10
+    # Segment 去重相似度阈值（0.0-1.0），超过则判定为重复
+    similarity_threshold: 0.8
+    # 是否进行响度归一化（提升噪声视频质量，但增加处理时间）
+    normalize_loudness: false
+    # Whisper beam search 大小（提升边界准确率）
+    beam_size: 5
+    # 是否使用 temperature fallback（首次 0，失败时 0.5）
+    temperature_fallback: true
+
 llm:
   # LLM 提供商: llama_cpp / openai / ollama
   provider: "llama_cpp"
@@ -23,7 +40,7 @@ llm:
   # API key (llama.cpp 通常不需要，留空即可)
   api_key: ""
   # 超时时间 (秒)
-  timeout: 300
+  timeout: 1800
   # 温度 (0-1，越低越确定)
   temperature: 0.3
   # 最大输出 token 数 (LLM 响应长度)

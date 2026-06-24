@@ -112,7 +112,7 @@ Chunk B 输出 segment: [S1'(14:50-15:08), S2'(15:08-15:25), ...]
   最终: [..., S2(14:20-14:35), S1'(14:50-15:08), S2'(15:08-15:25), ...]
 ```
 
-#### 3.4 统一合并输出层（Step 3）
+#### 3.4 统一合并输出层（Step 3）✅ 已实现
 
 **涉及文件：** `src/transcribe/merger.py` + `src/transcribe/models.py`（扩展）
 
@@ -126,7 +126,7 @@ Chunk B 输出 segment: [S1'(14:50-15:08), S2'(15:08-15:25), ...]
 - 分段结果对上层透明 — `TranscriptResult` 接口不变
 - 可选：LLM 标点修复后处理（后续做，见中期目标 5）
 
-#### 3.5 Whisper 执行策略优化
+#### 3.5 Whisper 执行策略优化 ✅ 已实现
 
 **涉及文件：** `src/transcribe/whisper_engine.py`
 

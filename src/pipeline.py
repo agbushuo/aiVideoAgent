@@ -62,7 +62,7 @@ def process_video(
     video_path: str | Path,
     *,
     output_dir: str | Path = "outputs",
-    language: str = "zh",
+    language: str | None = None,
     clip: bool = False,
     min_score: float | None = None,
     merge_clips: bool = True,
@@ -135,7 +135,7 @@ def process_video(
     try:
         console.print(f"\n[bold blue]VideoAgent[/bold blue] - 处理视频")
         console.print(f"  文件: {video_path.name}")
-        console.print(f"  语言: {language}")
+        console.print(f"  语言: {language or 'auto'}")
         console.rule()
 
         console.print("[bold]Stage 1/3[/bold]: Whisper 转录...")
@@ -146,11 +146,26 @@ def process_video(
 
         from src.transcribe.whisper_engine import WhisperEngine
 
+        seg_cfg = whisper_cfg.get("segment_transcribe", {})
+        ffmpeg_cfg = config.get("ffmpeg", {})
+
         engine = WhisperEngine(
             model_path=whisper_model_path or whisper_cfg.get("model_path"),
             model_name=whisper_model_name or whisper_cfg.get("model_name", "large-v3"),
             device=whisper_device or whisper_cfg.get("device", "auto"),
             fp16=whisper_fp16 if whisper_fp16 is not None else whisper_cfg.get("fp16", True),
+            # 分段转录配置
+            chunk_duration=seg_cfg.get("chunk_duration", 900.0),
+            overlap=seg_cfg.get("overlap", 10.0),
+            segment_threshold_minutes=seg_cfg.get("threshold_minutes", 30.0),
+            similarity_threshold=seg_cfg.get("similarity_threshold", 0.8),
+            normalize_loudness=seg_cfg.get("normalize_loudness", False),
+            # ffmpeg 路径
+            ffmpeg_path=ffmpeg_cfg.get("path", "ffmpeg"),
+            ffprobe_path=ffmpeg_cfg.get("probe_path", "ffprobe"),
+            # Whisper 参数优化
+            beam_size=seg_cfg.get("beam_size", 5),
+            temperature_fallback=seg_cfg.get("temperature_fallback", True),
         )
 
         transcript: TranscriptResult = engine.transcribe(
