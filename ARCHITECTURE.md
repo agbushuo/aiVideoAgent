@@ -163,6 +163,53 @@ class AnalysisReport:
 ### 4.3 输出格式
 
 **JSON 报告** (`outputs/reports/video_20260622.json`):
+```json
+{
+  "video": "input.mkv",
+  "duration": 180.5,
+  "language": "zh",
+  "summary": "这是一个关于...的视频",
+  "highlights": [
+    {
+      "segment_id": 12,
+      "start": 45.2,
+      "end": 78.5,
+      "title": "核心观点阐述",
+      "reason": "讲者在此处提出了全文最重要的论点...",
+      "score": 0.95
+    }
+  ],
+  "analysis_by": "Qwen/Ollama",
+  "analyzed_at": "2026-06-22T10:30:00+08:00"
+}
+```
+
+**SRT 字幕** (`outputs/subtitles/video_20260622.srt`):
+```
+1
+00:00:00,000 --> 00:00:05,500
+大家好，欢迎来到今天的视频
+
+2
+00:00:05,500 --> 00:00:12,000
+今天我们来讲一讲...
+```
+
+**Markdown 报告** (`outputs/reports/video_20260622.md`):
+```markdown
+# 视频分析报告
+
+## 概要
+视频整体总结内容...
+
+## 亮点片段
+
+### 1. 核心观点阐述 (00:45 - 01:18) ⭐ 0.95
+**为什么值得剪:** 讲者在此处提出了...
+
+### 2. 案例演示 (02:30 - 03:15) ⭐ 0.88
+**为什么值得剪:** 这段演示非常直观...
+```
 
 ### 4.4 Smart Clip Engine 数据流
 
@@ -284,82 +331,6 @@ videoagent pipeline input.mkv --language zh
 
 # 一键全流程 + 智能剪辑
 videoagent pipeline input.mkv --clip --mode viral --preset douyin --clips 10
-
-# 批量处理多个视频
-videoagent batch "D:/videos/" --clip --min-score 0.7
-videoagent batch "D:/videos/*.mp4" --clip --no-merge
-
-# 查看帮助
-videoagent --help
-videoagent transcribe --help
-```
-```json
-{
-  "video": "input.mkv",
-  "duration": 180.5,
-  "language": "zh",
-  "summary": "这是一个关于...的视频",
-  "highlights": [
-    {
-      "segment_id": 12,
-      "start": 45.2,
-      "end": 78.5,
-      "title": "核心观点阐述",
-      "reason": "讲者在此处提出了全文最重要的论点...",
-      "score": 0.95
-    }
-  ],
-  "analysis_by": "Qwen/Ollama",
-  "analyzed_at": "2026-06-22T10:30:00+08:00"
-}
-```
-
-**SRT 字幕** (`outputs/subtitles/video_20260622.srt`):
-```
-1
-00:00:00,000 --> 00:00:05,500
-大家好，欢迎来到今天的视频
-
-2
-00:00:05,500 --> 00:00:12,000
-今天我们来讲一讲...
-```
-
-**Markdown 报告** (`outputs/reports/video_20260622.md`):
-```markdown
-# 视频分析报告
-
-## 概要
-视频整体总结内容...
-
-## 亮点片段
-
-### 1. 核心观点阐述 (00:45 - 01:18) ⭐ 0.95
-**为什么值得剪:** 讲者在此处提出了...
-
-### 2. 案例演示 (02:30 - 03:15) ⭐ 0.88
-**为什么值得剪:** 这段演示非常直观...
-```
-
----
-
-## 五、CLI 命令设计 (typer)
-
-```bash
-# 转录视频 → 字幕
-videoagent transcribe input.mkv --language zh --output-dir ./outputs
-
-# 分析字幕 → 报告
-videoagent analyze ./outputs/subtitles/input.json --output-dir ./outputs
-
-# 从报告提取亮点片段
-videoagent clip ./outputs/reports/input.json --merge --min-score 0.7
-
-# 一键全流程 (转录 + 分析)
-videoagent pipeline input.mkv --language zh
-
-# 一键全流程 + 自动剪辑
-videoagent pipeline input.mkv --clip --min-score 0.7
 
 # 批量处理多个视频
 videoagent batch "D:/videos/" --clip --min-score 0.7

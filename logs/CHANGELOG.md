@@ -2,9 +2,17 @@
 
 ## 2026-06-25
 
-### Smart Clip Engine v2.0 架构规划（文档更新）
-- **更新** `ROADMAP.md`：将"4. 智能片段筛选"升级为完整的 Smart Clip Engine v2.0 规划
-  - 新增四层架构：AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化
+### Smart Clip Engine v2.0 架构规划 + ROADMAP 结构调整（文档更新）
+- **更新** `ROADMAP.md`：
+  - 将"3. 长视频分段转录策略"标记为 ✅ 已完成（完成日期 2026-06-24）
+  - 所有子步骤（3.1-3.5）标记为已完成，实施顺序表增加"状态"列
+  - 新增真实验证记录（140 分钟电影全流程测试数据）
+  - "已完成"汇总新增分段转录策略条目（含音频预处理、overlap 去重、参数优化等细节）
+  - 将"4. 智能片段筛选"升级为完整的 Smart Clip Engine v2.0 规划
+    - 新增四层架构：AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化
+    - 新增十个功能模块详细设计
+    - 新增 CLI 命令设计、数据结构、preset 权重、实施顺序
+- **更新** `ARCHITECTURE.md`：
   - 新增十个功能模块详细设计：Scene Detection、Clip Mode、Clip Count、Duration Planner、Dynamic Clip、Scene Type、Quality Score、Auto Diversity、Category Weight、二阶段筛选
   - 新增 CLI 命令设计（`--mode`, `--preset`, `--clips`, `--duration`, `--prompt`）
   - 新增实施顺序表（11 个步骤，MVP 优先 4.1-4.6）
