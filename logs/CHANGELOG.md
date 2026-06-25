@@ -2,6 +2,78 @@
 
 ## 2026-06-25
 
+### 项目可视化仪表盘
+- **新增** `dashboard.html`：交互式项目仪表盘，包含总览、架构关系图、数据流程图、模块详情、CLI 命令参考、路线图进度
+- **新增** 模块依赖关系图 (Mermaid)
+- **新增** 目录结构思维导图 (Mermaid)
+- **新增** 传统管线 + Smart Clip v2.0 数据流时序图
+- **新增** 长视频分段转录策略流程图
+- **新增** 8 个模块详情卡片（可点击展开接口文档）
+- **新增** CLI 命令速查表
+- **新增** Phase 1-5 路线图进度条
+
+### Smart Clip Engine v2.0 单元测试（87 个测试全部通过）
+- **新增** `tests/test_clip_engine.py`：Smart Clip Engine v2.0 完整单元测试
+  - TestScene（8 个）：创建、默认值、from_segments、序列化往返、duration/mid_point 属性
+  - TestClipCandidate（3 个）：创建、序列化往返、默认值
+  - TestClipResult（4 个）：创建、JSON 导出、序列化往返
+  - TestWhisperSegmentDetector（10 个）：基本分组、间隔检测、空输入、合并短场景、拆分长场景、无序输入、OpenCV 预留接口
+  - TestPresetWeights（12 个）：所有预设加载、未知预设报错、分数计算、自定义权重、JSON 文件加载
+  - TestClipMode（3 个）：模式加载、列表、未知模式报错
+  - TestScoreEngine（9 个）：预设评分、排序、排名分配、clip_mode、自定义权重、阈值过滤
+  - TestClipFilter（9 个）：Diversity 去重、数量限制、时长约束、selected 标记、gap 计算
+  - TestFilterHelpers（3 个）：diversify、select_top、select_by_duration 便捷函数
+  - TestDurationPlanner（7 个）：60s/180s 模板、空输入、时间顺序、高分优先、duration_ratio
+  - TestDurationHelpers（4 个）：plan_duration、list_duration_templates、show_duration_template
+  - TestDurationSlots（6 个）：槽位数据结构、模板结构、动态生成（短/中/长）
+  - TestFinalReviewer（6 个）：空输入、LLM 调用、结果序列化、target_duration 传递
+  - TestFinalReviewHelper（1 个）：便捷函数
+  - TestFullPipeline（3 个）：完整数据流集成、ClipResult 构建、weights.json 加载验证
+- **验证结果**：87 passed in 0.14s
+
+### Smart Clip Engine v2.0 MVP 实现（4.1-4.6 代码实现）
+- **新增** `src/clip_engine/`：智能片段筛选引擎模块
+  - `models.py` — Scene, ClipCandidate, ClipResult 数据模型
+    - Scene: 场景对象，包含 segment_ids, text, scene_type, tags, summary, multi_score
+    - ClipCandidate: 剪辑候选，包含 composite_score, rank, selected
+    - ClipResult: 完整剪辑结果，包含 all_candidates, selected_candidates
+    - MULTI_SCORE_DIMENSIONS: 8 个评分维度（hook, emotion, comedy, action, information, suspense, climax, viral）
+    - SCENE_TYPES: 10 种场景类型
+  - `scene_detector.py` — 场景检测器
+    - SceneDetector 抽象基类（预留 OpenCV 接口）
+    - WhisperSegmentDetector: 基于时间间隔分组（gap_threshold, min/max_scene_duration）
+    - OpenCVSceneDetector: 预留接口（NotImplementedError）
+  - `scorer.py` — 评分引擎
+    - PresetWeights: 预设权重（douyin/youtube/bilibili/viral/all）
+    - ClipMode: 剪辑模式权重（comedy/action/emotion/dialogue/knowledge/hook/viral/all）
+    - ScoreEngine: 综合评分计算，支持 preset + clip_mode + custom_weights
+  - `filter.py` — 过滤引擎
+    - ClipFilter: Diversity 去重（min_gap 滑动窗口）、数量控制（max_clips）、时长约束（target_duration）
+    - diversify(), select_top(), select_by_duration() 便捷函数
+- **新增** `prompts/scene_analysis.md`：LLM Scene 标注 prompt
+  - 场景类型识别、标签打标、多维评分（0-10 分制）、摘要生成
+- **更新** `src/analyze/llm_analyzer.py`：
+  - 新增 `_scene_prompt` prompt 加载
+  - 新增 `_build_scenes_text()` — 构建场景文本
+  - 新增 `_parse_scene_response()` — 解析 LLM 标注响应
+  - 新增 `analyze_scenes()` — 对 Scene 列表进行 LLM 标注（支持分批、用户 prompt 注入）
+- **更新** `src/main.py`：
+  - 新增 `_parse_duration()` — 解析时长字符串（60s, 3m, 1h 等格式）
+  - 新增 `_get_video_path_from_report()` — 从报告读取视频路径
+  - 新增 `_run_smart_clip()` — Smart Clip Engine v2.0 完整流程
+  - `clip` 命令新增参数: `--smart-clip`, `--mode`, `--preset`, `--clips`, `--duration`, `--prompt`, `--min-gap`, `--transcript`
+  - `pipeline` 命令新增参数: `--smart-clip`, `--mode`, `--preset`, `--clips`, `--duration`, `--prompt`
+- **更新** `ROADMAP.md`：
+  - 版本升至 v0.3.0
+  - Smart Clip Engine v2.0 标记为 ✅ MVP 已完成（4.1-4.6）
+  - 新增待实现项（4.7-4.11）
+- **设计决策**：
+  - Scene Detection MVP 完全基于 Whisper segment 时间间隔分组，不依赖视频文件
+  - 保留 SceneDetector 抽象基类，后续可切换 OpenCV 帧差异方案
+  - preset 权重使用模块级常量表（避免 dataclass mutable default 问题）
+  - LLM 标注复用现有分段策略，长视频分批处理（max_scenes_per_batch=50）
+  - CLI 通过 --smart-clip 参数切换新旧模式，完全兼容现有行为
+
 ### Smart Clip Engine v2.0 架构规划 + ROADMAP 结构调整（文档更新）
 - **更新** `ROADMAP.md`：
   - 将"3. 长视频分段转录策略"标记为 ✅ 已完成（完成日期 2026-06-24）
@@ -126,54 +198,47 @@
 - **重写** `src/batch/__init__.py`：基于 `process_video()` 实现批处理
   - `discover_videos()` — 支持文件/目录递归/glob 模式发现视频
   - `run_batch()` — 串行调用 `process_video()`，生成 CSV 汇总报告
-  - `BatchResult` — 批量处理结果聚合，包含 success_count/fail_count 等统计
-- **更新** `src/main.py`：新增 `batch` CLI 命令
-  - `videoagent batch <input>` — 支持文件/目录/glob 输入
-  - `--clip` / `--min-score` / `--merge` / `--transition` 参数
-- **更新** `ROADMAP.md`：
-  - 版本升至 v0.2.0
-  - "已完成" 增加全流程接口和批量处理模块
-  - "批量处理模式" 标记为已完成，保留并发控制等待增强项
-- **更新** `README.md`：
-  - 新增批量处理使用说明（CLI + Python API）
-  - 更新项目结构（增加 pipeline.py 和 batch/ 模块）
-  - 剪辑功能状态从"开发中"改为已完成
-- **更新** `ARCHITECTURE.md`：
-  - 项目结构增加 pipeline.py、batch/、logs/ 目录
-  - CLI 命令增加 clip 和 batch
-  - 实施路线图更新 Phase 1-3.5 为已完成
-
-### ffmpeg 剪辑模块实现
-- **新增** `src/edit/clipper.py`：完整的 ffmpeg 剪辑引擎
-  - `clips_from_report()` — 从报告 JSON 一键提取亮点片段（主入口）
-  - `extract_segment()` — 单个片段裁剪
-  - `clip_highlights()` — 批量裁剪独立片段
-  - `merge_clips()` — 拼接精华视频（支持交叉淡入淡出转场 / concat 直拼）
-  - 输出 MP4 (H.264 + AAC)，CRF 23 质量
-- **新增** `ClipResult` / `ClipBatchResult` 数据类
-- **更新** `src/edit/__init__.py`：导出新数据类
-- **更新** `src/utils/io.py`：
-  - 新增 `load_analysis_json()` — 从 JSON 加载分析报告
-  - `export_analysis_json()` 增加 `video_path` 持久化
+  - `BatchResult` — 批量处理结果聚合，包含 success_count/fai
+### Smart Clip Engine v2.0 增强（4.7-4.10 实现）
+- **新增** `src/clip_engine/planner.py`：Duration Planner（目标时长组合规划）
+  - DurationPlanner: 根据目标时长智能组合片段
+  - 预定义模板：60s（3高潮）、90s（4-5片段）、180s（5高潮+2过渡+1结尾）、300s
+  - 动态模板生成：根据任意目标时长自动生成槽位
+  - 槽位角色系统：hook/climax/transition/ending，按优先级分配
+  - plan_duration() 便捷函数
+- **新增** `src/clip_engine/weights.json`：预设权重配置文件
+  - 内置预设权重（douyin/youtube/bilibili/viral/all）
+  - 内置剪辑模式权重（comedy/action/emotion/dialogue/knowledge/hook/viral/all）
+  - 支持 ~/.videoagent/weights.json 用户自定义覆盖
+- **新增** `src/clip_engine/reviewer.py`：LLM Final Review（二阶段筛选）
+  - FinalReviewer: 对规则引擎筛选后的候选做 LLM 最终精选和重排序
+  - ReviewResult/ReviewSelection 结果模型
+  - final_review() 便捷函数
+- **新增** `prompts/final_review.md`：LLM Final Review 独立 prompt 文件
+  - 精选标准：独立性、吸引力、多样性、节奏感、平台适配
+  - 排序原则：Hook 前置、节奏递进、类型交替、留白
+  - 角色定义：hook/buildup/climax/transition/ending
+- **更新** `src/clip_engine/scorer.py`：
+  - 权重从 JSON 文件加载（替代硬编码常量）
+  - 新增 reload_weights() — 运行时刷新权重缓存
+  - 新增 PresetWeights.from_json_file() — 从外部 JSON 加载自定义权重
+  - ScoreEngine 新增 weight_file 参数
+  - 新增 list_presets() / show_preset() / ClipMode.list_available() 便捷函数
+- **更新** `src/analyze/llm_analyzer.py`：
+  - 新增 _final_review_prompt 加载
+  - 新增 _default_final_review_prompt() 默认 prompt
+  - 新增 _build_candidates_text() — 构建候选片段文本
+  - 新增 _parse_final_review_response() — 解析 Final Review 响应
+  - 新增 final_review() — LLM 二阶段筛选方法
+  - 改进 analyze_scenes() 中的用户 prompt 注入逻辑（从 system prompt 改为 user prompt 末尾追加）
 - **更新** `src/main.py`：
-  - 新增 `clip` 子命令（`--video`, `--merge/--no-merge`, `--transition`, `--min-score`）
-  - `pipeline` 命令增加 `--clip` 和 `--min-score` 参数
-  - `analyze` 命令增加 `--video` 参数（记录源视频路径到报告）
-
-### 项目规划文档
-- **新增** `ROADMAP.md`：完整实施路线图
-  - 近期目标：批量处理、剪辑后处理、长视频分段转录
-  - 中期目标：智能片段筛选、多语言混合支持
-  - 远期目标：FastAPI 服务化、可视化界面（NiceGUI → Tauri）
-  - Viral Engine v2.0 规划：注意力扫描、故事模板、Viral Score、渲染增强
-
-### 长视频分段转录策略 3.4-3.5 完成
-- **更新** `src/transcribe/models.py`：3.4 统一合并输出层
-  - `Segment.to_dict()` — 转换为字典（支持 include_words 选项）
-  - `Segment.to_srt_block()` — 转换为单个 SRT 字幕块
-  - `TranscriptResult.to_dict()` — 结构化字典输出
-  - `TranscriptResult.to_json()` — JSON 字符串输出（ensure_ascii=False）
-  - `TranscriptResult.to_srt()` — 完整 SRT 字幕文本
+  - _run_smart_clip() 集成 Duration Planner 和 LLM Final Review
+  - 新增 --duration-planner CLI 参数（启用 Duration Planner）
+  - 新增 --final-review CLI 参数（启用 LLM Final Review）
+  - 新增 --final-review-count CLI 参数（Final Review 精选数量）
+  - clip 和 pipeline 命令均支持新参数
+- **更新** `src/clip_engine/__init__.py`：更新模块文档
+to_srt()` — 完整 SRT 字幕文本
   - `TranscriptResult.export_json()` / `export_srt()` — 文件导出
   - `TranscriptResult.from_dict()` / `from_json()` — 反序列化
   - `_seconds_to_srt_time()` 使用 round() 修复浮点毫秒精度问题

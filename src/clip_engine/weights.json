@@ -1,0 +1,89 @@
+{
+  "_comment": "Smart Clip Engine v2.0 预设权重配置",
+  "_description": "每个预设定义了对多维评分的加权比例，权重之和应为 1.0（会自动归一化）",
+  "_dimensions": ["hook", "emotion", "comedy", "action", "information", "suspense", "climax", "viral"],
+
+  "preset": {
+    "douyin": {
+      "hook": 0.40,
+      "emotion": 0.30,
+      "climax": 0.20,
+      "information": 0.10
+    },
+    "youtube": {
+      "information": 0.50,
+      "climax": 0.30,
+      "hook": 0.20,
+      "emotion": 0.10
+    },
+    "bilibili": {
+      "information": 0.35,
+      "comedy": 0.25,
+      "emotion": 0.20,
+      "hook": 0.15,
+      "climax": 0.10
+    },
+    "viral": {
+      "hook": 0.30,
+      "emotion": 0.25,
+      "comedy": 0.20,
+      "climax": 0.15,
+      "information": 0.10
+    },
+    "all": {
+      "hook": 0.125,
+      "emotion": 0.125,
+      "comedy": 0.125,
+      "action": 0.125,
+      "information": 0.125,
+      "suspense": 0.125,
+      "climax": 0.125,
+      "viral": 0.125
+    }
+  },
+
+  "clip_mode": {
+    "comedy": {
+      "comedy": 0.80,
+      "viral": 0.20
+    },
+    "action": {
+      "action": 0.70,
+      "suspense": 0.30
+    },
+    "emotion": {
+      "emotion": 0.60,
+      "climax": 0.40
+    },
+    "dialogue": {
+      "information": 0.40,
+      "hook": 0.30,
+      "emotion": 0.30
+    },
+    "knowledge": {
+      "information": 0.80,
+      "hook": 0.20
+    },
+    "hook": {
+      "hook": 0.90,
+      "viral": 0.10
+    },
+    "viral": {
+      "hook": 0.30,
+      "emotion": 0.25,
+      "comedy": 0.20,
+      "climax": 0.15,
+      "information": 0.10
+    },
+    "all": {
+      "hook": 0.125,
+      "emotion": 0.125,
+      "comedy": 0.125,
+      "action": 0.125,
+      "information": 0.125,
+      "suspense": 0.125,
+      "climax": 0.125,
+      "viral": 0.125
+    }
+  }
+}

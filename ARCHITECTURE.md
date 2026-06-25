@@ -2,7 +2,7 @@
 
 > 创建日期: 2026-06-22  
 > 最后更新: 2026-06-25  
-> 状态: Phase 1-3 已完成，批量处理已实现，Smart Clip Engine v2.0 规划中
+> 状态: Phase 1-4 已完成（Smart Clip Engine v2.0 MVP 实现）
 
 ---
 
@@ -68,15 +68,15 @@ aiVideoAgent/
 │   │   ├── __init__.py
 │   │   └── llm_analyzer.py     # LLM 分析引擎
 │   │                           #   - analyze() → AnalysisReport (兼容旧版)
-│   │                           #   - scene_analysis() → list[Scene] (新版)
+│   │                           #   - analyze_scenes() → list[Scene] (新版 Scene 标注)
 │   │
-│   ├── clip_engine/            # 新增：智能片段筛选引擎 (Smart Clip Engine v2.0)
+│   ├── clip_engine/            # 智能片段筛选引擎 (Smart Clip Engine v2.0 ✅)
 │   │   ├── __init__.py
-│   │   ├── models.py           # Scene, ClipCandidate 数据模型
-│   │   ├── scene_detector.py   # Scene Detection（Whisper segment 分组 + OpenCV 接口）
+│   │   ├── models.py           # Scene, ClipCandidate, ClipResult 数据模型
+│   │   ├── scene_detector.py   # Scene Detection（Whisper segment 分组 + OpenCV 预留）
 │   │   ├── scorer.py           # Score Engine（多维评分 + preset 权重计算）
 │   │   ├── filter.py           # Filter Engine（Diversity 去重、数量/时长约束）
-│   │   └── planner.py          # Duration Planner（目标时长组合规划）
+│   │   └── planner.py          # Duration Planner（目标时长组合规划，待实现）
 │   │
 │   ├── edit/
 │   │   ├── __init__.py
@@ -98,7 +98,8 @@ aiVideoAgent/
 │
 ├── prompts/
 │   ├── system.md               # LLM system prompt
-│   └── highlight_extract.md    # 亮点提取 prompt 模板
+│   ├── highlight_extract.md    # 亮点提取 prompt 模板 (兼容旧版)
+│   └── scene_analysis.md       # Scene 标注 prompt 模板 (Smart Clip v2.0)
 │
 ├── outputs/                    # 输出目录 (gitignore)
 │   ├── subtitles/              # SRT + JSON 字幕文件
@@ -321,16 +322,23 @@ videoagent analyze ./outputs/subtitles/input.json --output-dir ./outputs
 # 从报告提取亮点片段（兼容旧版）
 videoagent clip ./outputs/reports/input.json --merge --min-score 0.7
 
-# 智能片段筛选（新版 Smart Clip Engine）
-videoagent clip ./outputs/reports/input.json --video input.mp4 --mode comedy --clips 5
-videoagent clip ./outputs/reports/input.json --video input.mp4 --preset douyin --duration 60s
-videoagent clip ./outputs/reports/input.json --video input.mp4 --prompt "切情侣吵架片段"
+# 智能片段筛选（新版 Smart Clip Engine v2.0）
+videoagent clip report.json --video input.mp4 --smart-clip \
+    --transcript subtitles.json --mode comedy --clips 5
+videoagent clip report.json --video input.mp4 --smart-clip \
+    --transcript subtitles.json --preset douyin --duration 60s
+videoagent clip report.json --video input.mp4 --smart-clip \
+    --transcript subtitles.json --prompt "切情侣吵架片段"
 
 # 一键全流程 (转录 + 分析)
 videoagent pipeline input.mkv --language zh
 
-# 一键全流程 + 智能剪辑
-videoagent pipeline input.mkv --clip --mode viral --preset douyin --clips 10
+# 一键全流程 + 传统剪辑
+videoagent pipeline input.mkv --clip --min-score 0.7
+
+# 一键全流程 + 智能剪辑 (Smart Clip Engine v2.0)
+videoagent pipeline input.mkv --smart-clip --mode viral --preset douyin --clips 10
+videoagent pipeline input.mkv --smart-clip --mode comedy --duration 180s
 
 # 批量处理多个视频
 videoagent batch "D:/videos/" --clip --min-score 0.7

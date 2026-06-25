@@ -1,7 +1,7 @@
 # VideoAgent 实施路线图
 
 > 最后更新: 2026-06-25  
-> 当前版本: v0.2.0 (Smart Clip Engine v2.0 规划中)
+> 当前版本: v0.4.0 (Smart Clip Engine v2.0 4.1-4.10 已完成)
 
 ---
 
@@ -31,8 +31,13 @@
   - Whisper 参数优化：beam_size=5，temperature fallback
   - 统一输出层：TranscriptResult 接口对上层透明
   - 真实验证：140 分钟电影全流程（10 chunks，7171 segments，6 个亮点）
-- [x] **Smart Clip Engine v2.0 架构规划**（文档）
-  - 四层架构设计（AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化）
+- [x] **Smart Clip Engine v2.0 MVP**（`src/clip_engine/`，2026-06-25 完成）
+  - 四层架构实现（AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化）
+  - Scene Detection（Whisper segment 分组 MVP + OpenCV 预留接口）
+  - LLM Scene 标注（多维评分 + 标签 + 摘要，支持分段调用）
+  - Score Engine（preset 权重: douyin/youtube/bilibili/viral/all + clip mode）
+  - Filter Engine（Diversity 去重、数量/时长约束）
+  - CLI 集成（--smart-clip, --mode, --preset, --clips, --duration, --prompt）
   - 十个功能模块详细设计
   - Scene Detection 接口（Whisper segment MVP + OpenCV 预留）
   - 多维评分 + preset 权重系统
@@ -189,11 +194,28 @@ LLM Analyze → Clip (unchanged)
 
 ## 中期目标（功能扩展）
 
-### 4. Smart Clip Engine v2.0（智能片段筛选引擎）
+### 4. Smart Clip Engine v2.0（智能片段筛选引擎）✅ MVP 已完成
 
 > 目标：从"LLM 一次性输出亮点"升级为"LLM 打标签 + 程序规则引擎 + 策略筛选"的多层架构  
 > 核心变化：LLM 不再输出"有哪些精彩片段"，而是输出每个 Scene 的结构化标签和多维评分；后续排序、去重、组合全部由程序逻辑处理  
 > 定位：Phase 4（功能增强阶段），替代原有模糊的"智能片段筛选"规划
+> 
+> **完成日期: 2026-06-25**  
+> **已完成: 4.1-4.10**（4.11 CLI 集成待端到端测试）  
+> **已实现功能:**
+> - [x] 4.1 数据结构升级（Scene, ClipCandidate 模型）
+> - [x] 4.2 Scene Detection（Whisper segment 分组 MVP + OpenCV 预留接口）
+> - [x] 4.3 LLM Scene 标注 prompt + 分段调用
+> - [x] 4.4 Score Engine（preset 权重计算: douyin/youtube/bilibili/viral/all）
+> - [x] 4.5 Filter Engine（Diversity 去重、数量/时长约束）
+> - [x] 4.6 Clip Mode + Clip Count（CLI: --mode, --preset, --clips, --duration, --prompt）
+> - [x] 4.7 Duration Planner（目标时长组合规划: 60s/90s/180s/300s 模板 + 动态生成）
+> - [x] 4.8 Category Weight（预设权重 JSON 持久化 + ~/.videoagent/ 用户自定义）
+> - [x] 4.9 用户自定义 Prompt（独立 final_review.md prompt + 改进注入逻辑）
+> - [x] 4.10 LLM Final Review（二阶段筛选, --final-review 参数触发）
+>
+> **待实现:**
+> - [ ] 4.11 CLI 集成 + 端到端测试
 
 ---
 
@@ -695,246 +717,4 @@ src/
     │   Render Engine      │  → 字幕烧录/缩放/去静音
     └─────────┬───────────┘
               ↓
-    ┌─────────────────────┐
-    │ Stage 6: 质量评估    │  (预留) Viral Critic
-    │   (可选, 后期添加)    │  → 评分 + 修复建议
-    └─────────────────────┘
-```
-
----
-
-### 目录结构（增量式，不破坏现有功能）
-
-```
-src/
- ├── transcribe/          # 保留：Whisper 转录 (不变)
- ├── analyze/             # 保留：LLM 分析 (不变)
- ├── clip_engine/         # 新增：Smart Clip Engine (Phase 4)
- ├── attention/           # 新增：注意力扫描
- │    ├── scanner.py      # 主入口：混合分析引擎
- │    ├── audio_features.py   # 音频特征提取 (音量/语速/停顿)
- │    └── text_features.py    # 文本特征 (反转词/信息密度/情绪)
- ├── viral/               # 新增：传播片段构建
- │    ├── segment_builder.py  # 从注意力曲线选传播片段
- │    └── scorer.py           # Viral Score 计算 (公式可配置)
- ├── planner/             # 新增：故事编排
- │    ├── story_planner.py    # LLM 驱动的故事结构编排
- │    └── templates.py        # 预设模板 (游戏/口播/故事)
- ├── edit/                # 增强：渲染引擎
- │    ├── clipper.py          # 保留：基础剪辑 (不变)
- │    └── effects.py          # 新增：后处理效果
- └── utils/               # 保留 + 扩展
-```
-
----
-
-### 故事模板系统
-
-不同内容类型使用不同的叙事结构模板：
-
-#### 模板 1：游戏实况 (`gaming_highlight`)
-
-```
-目标时长: 30-60s (短视频) 或 10-25min (精华)
-结构:
-  0-3s    HOOK: 最精彩的瞬间前置 (击杀/翻车/搞笑)
-  3-8s    CONTEXT: 极短背景 (在干嘛/什么局)
-  8s-     CORE: 按时间线播放精彩片段，快剪节奏
-  结尾    PAYOFF: 结果/反转/笑点落地
-选片规则:
-  - 优先高音量峰值段 (战斗/爆炸/惊呼)
-  - 优先操作密集段 (APM 高)
-  - 保留完整的"起因→过程→结果"链
-```
-
-#### 模板 2：故事分享 (`storytelling`)
-
-```
-目标时长: 30-60s
-结构:
-  0-2s    HOOK: 冲突/反常识/悬念前置
-  2-8s    SETUP: 背景铺垫 (极短)
-  8-25s   CORE: 核心信息/故事主体
-  25-30s  TWIST: 反转/总结/金句
-选片规则:
-  - 优先情绪变化大的段落
-  - 优先有"但是/然而/实际上"等反转词的段落
-  - 保留完整的叙事弧
-```
-
-#### 模板 3：口播知识 (`talking_head`)
-
-```
-目标时长: 30-60s (短视频) 或 10-25min (精华)
-结构:
-  0-3s    HOOK: 最核心的观点/数据前置
-  3-10s   TEASER: "为什么重要"
-  10s-    CORE: 按信息密度排序，去掉废话
-  结尾    CTA: 总结/行动号召
-选片规则:
-  - 优先信息密度最高的段落
-  - 去掉"嗯/啊/然后"等填充词段落 (静音移除)
-  - 保留数据/案例/类比
-```
-
-#### 模板 4：直播精华 (`livestream_digest`)
-
-```
-目标时长: 10-25min
-结构:
-  按时间线保留精彩片段，去水留精
-  - 去掉长时间挂机/等待/重复操作
-  - 保留高光时刻 + 有趣互动
-  - 片段之间快速过渡
-选片规则:
-  - 注意力评分 > 阈值的段落
-  - 观众互动高峰 (弹幕/笑声)
-  - 关键决策/转折点
-```
-
----
-
-### 注意力扫描器 (Attention Scanner) 设计
-
-**混合信号分析，输出每秒级注意力曲线：**
-
-```python
-@dataclass
-class AttentionPoint:
-    timestamp: float
-    attention_score: float    # 综合注意力分 (0-1)
-    audio: AudioFeatures      # 音频特征
-    text: TextFeatures        # 文本特征
-
-@dataclass
-class AudioFeatures:
-    volume: float             # 音量 (归一化 0-1)
-    speech_rate: float        # 语速 (字/秒)
-    pitch: float              # 音调
-    is_silence: bool          # 是否静音段
-    volume_delta: float       # 音量变化率 (突然变大 = 可能精彩)
-
-@dataclass
-class TextFeatures:
-    info_density: float       # 信息密度
-    has_reversal: bool        # 是否含反转词
-    emotion: str              # neutral / surprise / excitement / ...
-    emotion_delta: float      # 情绪变化幅度
-```
-
-**音频特征提取（依赖）：**
-- `librosa` — 音频信号分析（音量、音调、MFCC）
-- `pydub` — 静音检测、音频切片
-
-**文本特征提取：**
-- 反转词词典（但是/然而/实际上/没想到/结果/居然/卧槽/我靠）
-- 信息密度 = 单位时间内有效词汇数 / 总词汇数
-- 情绪分类 = LLM 批量标注（每 5 秒一个标签，不必每秒）
-
----
-
-### Viral Score 公式（可配置，后续调优）
-
-```python
-# 默认公式，权重后续根据实际效果调整
-VIRAL_SCORE_FORMULA = {
-    "hook_strength": 0.35,       # 开头吸引力
-    "emotion_delta": 0.25,       # 情绪变化幅度
-    "info_density": 0.20,        # 信息密度
-    "structure_fit": 0.20,       # 与模板结构的匹配度
-}
-
-# 不同模板可以覆盖权重
-TEMPLATE_WEIGHTS = {
-    "gaming_highlight": {
-        "hook_strength": 0.30,
-        "emotion_delta": 0.30,   # 游戏更看重情绪/刺激
-        "info_density": 0.15,
-        "structure_fit": 0.25,
-    },
-    "talking_head": {
-        "hook_strength": 0.25,
-        "emotion_delta": 0.15,
-        "info_density": 0.35,    # 口播更看重信息量
-        "structure_fit": 0.25,
-    },
-}
-```
-
----
-
-### CLI 命令设计
-
-```bash
-# 短视频模式 (30-60s)
-videoagent viral input.mp4 --template gaming_highlight --duration short
-
-# 精华合集模式 (10-25min)
-videoagent viral input.mp4 --template livestream_digest --duration digest
-
-# 批量处理多个视频
-videoagent viral --batch "D:/recordings/*.mp4" --template gaming_highlight
-
-# 指定输出平台格式
-videoagent viral input.mp4 --platform tiktok    # 9:16 竖屏
-videoagent viral input.mp4 --platform youtube    # 16:9 横屏
-
-# 迭代优化 (后期添加)
-videoagent viral input.mp4 --auto-iterate --max-rounds 3
-
-# 查看注意力曲线 (调试用)
-videoagent scan input.mp4 --output attention_curve.json
-```
-
----
-
-### 渲染引擎增强 (effects.py)
-
-```python
-class RenderEffects:
-    """后处理效果"""
-
-    def burn_subtitles(self, video, srt_path, style="kinetic_bold"):
-        """烧录字幕，支持关键词高亮"""
-
-    def dynamic_zoom(self, video, attention_curve, trigger_threshold=0.8):
-        """高注意力点自动缩放 (Ken Burns 效果)"""
-
-    def remove_silence(self, video, threshold=-40, min_duration=0.3):
-        """移除静音段 (直播去水)"""
-
-    def fast_cut_transition(self, clip1, clip2, duration=0.1):
-        """快剪转场 (比淡入淡出更激进)"""
-
-    def beat_sync_cuts(self, video, audio_beats):
-        """按音乐节拍对齐剪辑点"""
-```
-
----
-
-### Viral Critic（预留接口，后期实现）
-
-```python
-class ViralCritic:
-    """视频质量评估 + 自动修复建议"""
-
-    def evaluate(self, video_path: str, template: str) -> CriticReport:
-        """评估视频质量，返回问题列表和修复建议"""
-
-    def auto_fix(self, report: CriticReport, original_clips: list) -> EDL:
-        """根据评估报告自动调整片段选择"""
-```
-
-**触发条件：** 等有真实数据对比后再实现，不急于现在做。
-
----
-
-### 实施顺序
-
-| 阶段 | 内容 | 预估时间 | 依赖 |
-|------|------|----------|------|
-| **V2.1** | 故事模板系统 + CLI `viral` 命令 | 1-2 周 | 无 |
-| **V2.2** | 注意力扫描器 (音频+文本) | 2-3 周 | librosa, pydub |
-| **V2.3** | Viral Score + 片段选择器 | 1 周 | V2.2 |
-| **V2.4** | 渲染效果增强 (字幕/缩放/去静音) | 1-2 周 | ffmpeg |
-| **V2.5** | Viral Critic 闭环 | 待定 | 有真实数据后 |
+    �

@@ -68,6 +68,8 @@ class LLMAnalyzer:
         self.context_size = context_size
         self._system_prompt = self._load_prompt("system.md")
         self._highlight_prompt = self._load_prompt("highlight_extract.md")
+        self._scene_prompt = self._load_prompt("scene_analysis.md")
+        self._final_review_prompt = self._load_prompt("final_review.md")
 
     def _load_prompt(self, filename: str) -> str:
         prompt_path = Path(__file__).parent.parent.parent / "prompts" / filename
@@ -96,6 +98,26 @@ class LLMAnalyzer:
             "每个亮点必须包含 segment_id, start, end, title, reason, score。\n"
             "输出严格 JSON 格式。\n\n"
             "字幕内容:\n{transcript_text}"
+        )
+
+    @staticmethod
+    def _default_scene_prompt() -> str:
+        return (
+            "对以下视频场景进行标注。每个场景输出 scene_type, tags, multi_score, summary。\n"
+            "multi_score 包含 hook, emotion, comedy, action, information, suspense, climax, viral（0-10 分）。\n"
+            "输出严格 JSON 数组格式。\n\n"
+            "场景列表:\n{scenes_text}"
+        )
+
+    @staticmethod
+    def _default_final_review_prompt() -> str:
+        return (
+            "从以下候选片段中精选最适合的片段并排序。\n"
+            "输出 JSON 格式: {\"selected\": [{\"scene_id\": N, \"role\": \"...\", \"reason\": \"...\"}], "
+            "\"rejected\": [...], \"overall_comment\": \"...\"}\n\n"
+            "候选片段:\n{candidates_text}\n\n"
+            "用户指令: {user_prompt}\n"
+            "选出 {num_to_select} 个片段，目标平台: {platform}，目标时长: {target_duration} 秒"
         )
 
     @staticmethod
@@ -524,3 +546,320 @@ class LLMAnalyzer:
             model=self.model,
             analyzed_at=datetime.now().isoformat(),
         )
+
+    # ================================================================= #
+    # Scene 标注（Smart Clip Engine v2.0）
+    # ================================================================= #
+
+    def _build_scenes_text(
+        self, scenes: list  # list[Scene]
+        ) -> str:
+        """构建场景文本 — 用于 LLM 标注
+
+        每个场景包含编号、时间范围、文本内容。
+        """
+        lines = []
+        for s in scenes:
+            lines.append(
+                f"--- 场景 #{s.scene_id} "
+                f"[{s.start:.1f}s - {s.end:.1f}s] "
+                f"({s.duration:.1f}s) ---"
+            )
+            lines.append(s.text)
+            lines.append("")
+        return "\n".join(lines)
+
+    def _parse_scene_response(self, response: str) -> list[dict[str, Any]]:
+        """解析 LLM 场景标注响应
+
+        期望 JSON 数组格式，每个元素包含 scene_id, scene_type, tags,
+        multi_score, summary。
+        """
+        cleaned = response.strip()
+
+        # 移除 markdown 代码块标记
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            cleaned = "\n".join(lines)
+
+        # 尝试提取 JSON 数组
+        start_bracket = cleaned.find("[")
+        end_bracket = cleaned.rfind("]")
+        if start_bracket >= 0 and end_bracket > start_bracket:
+            cleaned = cleaned[start_bracket:end_bracket + 1]
+
+        # 尝试直接解析
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, list):
+                return data
+            # 如果是对象且包含 scenes 键
+            if isinstance(data, dict) and "scenes" in data:
+                return data["scenes"]
+        except json.JSONDecodeError:
+            pass
+
+        # 修复后重试
+        try:
+            fixed = self._repair_json(cleaned)
+            data = json.loads(fixed)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict) and "scenes" in data:
+                return data["scenes"]
+        except json.JSONDecodeError:
+            pass
+
+        console.print("[yellow]! Scene 标注 JSON 解析失败，返回空列表[/yellow]")
+        return []
+
+    def analyze_scenes(
+        self,
+        scenes: list,  # list[Scene] from clip_engine.models
+        user_prompt: str | None = None,
+        max_scenes_per_batch: int = 50,
+    ) -> list:  # list[Scene] with annotations
+        """对场景列表进行 LLM 标注
+
+        流程:
+        1. 将场景分批（避免超过上下文窗口）
+        2. 每批调用 LLM 获取标注
+        3. 将标注结果写回 Scene 对象
+
+        Args:
+            scenes: 待标注的 Scene 列表
+            user_prompt: 用户自定义指令（注入到 system prompt 中）
+            max_scenes_per_batch: 每批最大场景数
+
+        Returns:
+            标注后的 Scene 列表（原地修改）
+        """
+        if not scenes:
+            return scenes
+
+        console.print(
+            f"[dim]待标注 {len(scenes)} 个场景, "
+            f"每批最多 {max_scenes_per_batch} 个[/dim]"
+        )
+
+        # 分批处理
+        for batch_start in range(0, len(scenes), max_scenes_per_batch):
+            batch_end = min(batch_start + max_scenes_per_batch, len(scenes))
+            batch = scenes[batch_start:batch_end]
+
+            batch_num = batch_start // max_scenes_per_batch + 1
+            total_batches = (len(scenes) + max_scenes_per_batch - 1) // max_scenes_per_batch
+
+            console.print(
+                f"[bold]标注批次 {batch_num}/{total_batches}[/bold] "
+                f"({len(batch)} 个场景)"
+            )
+
+            # 构建场景文本
+            scenes_text = self._build_scenes_text(batch)
+
+            # 构建 prompt（支持用户指令注入）
+            prompt = self._scene_prompt
+            if user_prompt:
+                # 在 prompt 末尾追加用户指令
+                prompt = (
+                    prompt
+                    + f"\n\n## 用户额外指令\n\n{user_prompt}\n\n"
+                    + "请根据以上用户指令调整标签选择和评分倾向。\n"
+                    + "例如：如果用户要求'切情侣吵架片段'，"
+                    + "则对包含争吵、情感冲突的场景提高 emotion 和 action 评分。"
+                )
+            prompt = prompt.format(scenes_text=scenes_text)
+
+            # 构建 system prompt
+            system = self._system_prompt
+
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ]
+
+            # 调用 LLM
+            response = self._call_llm(messages)
+            parsed = self._parse_scene_response(response)
+
+            # 将标注结果写回 Scene 对象
+            annotated_count = 0
+            for item in parsed:
+                scene_id = item.get("scene_id")
+                if scene_id is None:
+                    continue
+
+                # Find matching Scene
+                scene = None
+                for s in batch:
+                    if s.scene_id == scene_id:
+                        scene = s
+                        break
+
+                if scene is None:
+                    continue
+
+                # Write annotations
+                scene.scene_type = item.get("scene_type", scene.scene_type)
+                scene.tags = item.get("tags", scene.tags)
+                scene.summary = item.get("summary", scene.summary)
+                scene.multi_score = item.get("multi_score", scene.multi_score)
+                annotated_count += 1
+
+            console.print(
+                f"[green]OK[/green] Batch {batch_num} done: "
+                f"{annotated_count}/{len(batch)} scenes"
+            )
+
+        console.print(
+            f"[green]OK[/green] Scene annotation complete ({len(scenes)} scenes)"
+        )
+
+        return scenes
+
+    # ================================================================= #
+    # Final Review (Smart Clip Engine v2.0 - Stage 2 filtering)
+    # ================================================================= #
+
+    def _build_candidates_text(self, candidates: list) -> str:
+        """Build candidate text for LLM Final Review"""
+        lines = []
+        for i, c in enumerate(candidates):
+            scene = c.scene
+            lines.append(
+                f"[{i+1}] Scene #{scene.scene_id} "
+                f"[{scene.start:.1f}s - {scene.end:.1f}s] "
+                f"({scene.duration:.1f}s) | "
+                f"Score: {c.composite_score:.2f} | "
+                f"Type: {scene.scene_type} | "
+                f"Tags: {', '.join(scene.tags) if scene.tags else 'none'}"
+            )
+            if scene.summary:
+                lines.append(f"    Summary: {scene.summary}")
+            ms = scene.multi_score
+            if ms:
+                dims = ", ".join(
+                    f"{k}={v:.1f}" for k, v in ms.items() if v > 3.0
+                )
+                lines.append(f"    Scores: {dims}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _parse_final_review_response(self, response: str) -> dict[str, Any]:
+        """Parse LLM Final Review response"""
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            cleaned = "\n".join(lines)
+
+        start_brace = cleaned.find("{")
+        end_brace = cleaned.rfind("}")
+        if start_brace >= 0 and end_brace > start_brace:
+            cleaned = cleaned[start_brace:end_brace + 1]
+
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        try:
+            fixed = self._repair_json(cleaned)
+            data = json.loads(fixed)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        console.print("[yellow]Final Review JSON parse failed, returning empty[/yellow]")
+        return {"selected": [], "rejected": [], "overall_comment": ""}
+
+    def final_review(
+        self,
+        candidates: list,
+        num_to_select: int | None = None,
+        platform: str = "douyin",
+        target_duration: float = 0.0,
+        user_prompt: str | None = None,
+    ) -> list:
+        """LLM Final Review - Stage 2 filtering
+
+        Performs LLM-based final selection and re-ranking of candidates
+        after rule engine filtering.
+        """
+        if not candidates:
+            return candidates
+
+        if num_to_select is None or num_to_select >= len(candidates):
+            num_to_select = len(candidates)
+
+        console.print(
+            f"[bold]LLM Final Review[/bold]: "
+            f"Select {num_to_select} from {len(candidates)} candidates"
+        )
+        if platform:
+            console.print(f"[dim]Platform: {platform}[/dim]")
+        if target_duration > 0:
+            console.print(f"[dim]Target duration: {target_duration:.0f}s[/dim]")
+        if user_prompt:
+            console.print(f"[dim]User prompt: {user_prompt}[/dim]")
+
+        candidates_text = self._build_candidates_text(candidates)
+
+        prompt = self._final_review_prompt.format(
+            candidates_text=candidates_text,
+            user_prompt=user_prompt or "No special requirements",
+            num_to_select=num_to_select,
+            platform=platform,
+            target_duration=target_duration,
+        )
+
+        system = (
+            "You are a professional short video editor and content strategist. "
+            "Select the best clips and rank them for playback order. "
+            "Output must be strict JSON format."
+        )
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+
+        response = self._call_llm(messages)
+        parsed = self._parse_final_review_response(response)
+
+        selected_items = parsed.get("selected", [])
+        rejected_items = parsed.get("rejected", [])
+        comment = parsed.get("overall_comment", "")
+
+        if comment:
+            console.print(f"[dim]Review: {comment}[/dim]")
+
+        if not selected_items:
+            console.print(
+                "[yellow]Final Review returned no selection, using original order[/yellow]"
+            )
+            return candidates
+
+        candidate_map = {c.scene_id: c for c in candidates}
+
+        result = []
+        for item in selected_items:
+            scene_id = item.get("scene_id")
+            if scene_id is not None and scene_id in candidate_map:
+                c = candidate_map[scene_id]
+                c._review_role = item.get("role", "auto")
+                c._review_reason = item.get("reason", "")
+                result.append(c)
+
+        console.print(
+            f"[green]OK[/green] Final Review done: "
+            f"{len(result)} clips selected"
+            + (f", {len(rejected_items)} rejected" if rejected_items else "")
+        )
+
+        return result if result else candidates
