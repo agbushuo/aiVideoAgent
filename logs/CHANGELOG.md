@@ -2,6 +2,29 @@
 
 ## 2026-06-25
 
+### Smart Clip Engine v2.0 架构规划（文档更新）
+- **更新** `ROADMAP.md`：将"4. 智能片段筛选"升级为完整的 Smart Clip Engine v2.0 规划
+  - 新增四层架构：AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化
+  - 新增十个功能模块详细设计：Scene Detection、Clip Mode、Clip Count、Duration Planner、Dynamic Clip、Scene Type、Quality Score、Auto Diversity、Category Weight、二阶段筛选
+  - 新增 CLI 命令设计（`--mode`, `--preset`, `--clips`, `--duration`, `--prompt`）
+  - 新增实施顺序表（11 个步骤，MVP 优先 4.1-4.6）
+  - 新增数据结构设计（Scene, ClipCandidate 模型）
+  - 新增 preset 权重配置表（douyin/youtube/bilibili）
+  - 新增 Scene Detection 接口设计（抽象基类 + Whisper segment MVP + OpenCV 预留）
+- **更新** `ARCHITECTURE.md`：
+  - 项目结构新增 `src/clip_engine/` 模块（models.py, scene_detector.py, scorer.py, filter.py, planner.py）
+  - 核心数据流新增 4.4 节（Scene 模型、ClipCandidate 模型、完整数据流图、Scene Detection 接口设计）
+  - CLI 命令设计新增智能片段筛选参数
+  - 实施路线图 Phase 4 细化 Smart Clip Engine v2.0 的子任务清单
+- **设计决策**：
+  - Scene Detection MVP 完全依赖 Whisper segment 逻辑分组，不依赖视频文件
+  - 保留 `SceneDetector` 抽象基类接口，后续可切换 OpenCV 帧差异方案
+  - preset 权重配置支持 JSON 文件扩展，用户可自定义平台权重
+  - LLM 调用复用分段转录策略，长视频分批处理，避免上下文截断
+  - 优先实现规则引擎（4.4/4.5）和策略引擎（4.6），成本最低、效果最明显
+
+### 修复分段转录时方言场景语言检测不一致
+- **修复** `src/transcribe/whisper_engine.py`：`_transcribe_segmented()` 中第一个 chunk 检测到的语言复用给后续所有 chunk，避免方言场景下各 chunk 被误判为不同语言（如 Russian/Dutch）
 ### 修复语言强制导致英文视频转录乱码问题
 - **修复** `src/transcribe/whisper_engine.py`：`transcribe()` / `_transcribe_direct()` / `_transcribe_segmented()` 的 `language` 参数默认值从 `"zh"` 改为 `None`（Whisper 自动检测）
 - **修复** `src/main.py`：`transcribe` / `pipeline` / `batch` CLI 命令的 `--language` 默认值从 `"zh"` 改为 `None`，显示时 `None` 显示为 `auto`

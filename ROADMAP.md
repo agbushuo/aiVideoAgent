@@ -1,7 +1,7 @@
 # VideoAgent 实施路线图
 
-> 最后更新: 2026-06-23  
-> 当前版本: v0.2.0
+> 最后更新: 2026-06-25  
+> 当前版本: v0.2.0 (Smart Clip Engine v2.0 规划中)
 
 ---
 
@@ -24,6 +24,12 @@
   - `discover_videos()` — 支持文件/目录递归/glob 模式
   - CSV 汇总报告输出
   - CLI `batch` 命令
+- [x] **Smart Clip Engine v2.0 架构规划**（文档）
+  - 四层架构设计（AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化）
+  - 十个功能模块详细设计
+  - Scene Detection 接口（Whisper segment MVP + OpenCV 预留）
+  - 多维评分 + preset 权重系统
+  - 实施顺序和 MVP 路径明确
 
 ---
 
@@ -174,17 +180,369 @@ LLM Analyze → Clip (unchanged)
 
 ## 中期目标（功能扩展）
 
-### 4. 智能片段筛选
+### 4. Smart Clip Engine v2.0（智能片段筛选引擎）
 
-当前亮点完全依赖 LLM 一次性判断，增加后处理提升准确性。
+> 目标：从"LLM 一次性输出亮点"升级为"LLM 打标签 + 程序规则引擎 + 策略筛选"的多层架构  
+> 核心变化：LLM 不再输出"有哪些精彩片段"，而是输出每个 Scene 的结构化标签和多维评分；后续排序、去重、组合全部由程序逻辑处理  
+> 定位：Phase 4（功能增强阶段），替代原有模糊的"智能片段筛选"规划
 
-**功能设计：**
-- **去重合并**：检测时间重叠的亮点片段，自动合并
-- **时长约束**：`--max-duration 5m` 指定精华视频总时长上限，自动按比例缩放片段
-- **多轮分析**：长视频先分段落分析，再全局排序筛选，避免上下文截断丢失信息
-- **片段评分校准**：基于信息密度、语速、停顿等信号二次校准 LLM 评分
+---
 
-**涉及文件：** `src/edit/clipper.py`（新增筛选逻辑）、`src/analyze/`（多轮分析）
+#### 4.1 整体架构
+
+```
+Whisper
+    │
+    ▼
+字幕 (Segment 列表)
+    │
+    ▼
+Scene Detection
+（场景切分 — 当前基于 Whisper segment 逻辑分组，预留 OpenCV 接口）
+    │
+    ▼
+LLM 分析（分阶段调用）
+（每个 Scene 输出标签 + 多维评分 + 简短摘要）
+    │
+    ▼
+Score Engine
+（程序评分 — 根据 preset 权重计算综合分）
+    │
+    ▼
+Filter Engine
+（去重合并、Diversity 最小间隔、时长约束、数量控制）
+    │
+    ▼
+Duration Planner
+（根据目标时长组合片段 — 如 60s ≈ 3 个高潮）
+    │
+    ▼
+LLM Final Review（可选）
+（从候选集中做最终精选和排序）
+    │
+    ▼
+Clipper（已有）
+（ffmpeg 裁剪 + 拼接）
+```
+
+---
+
+#### 4.2 数据结构升级
+
+**当前 `Highlight`（单维度）：**
+```python
+@dataclass
+class Highlight:
+    segment_id: int
+    start: float
+    end: float
+    title: str
+    reason: str
+    score: float          # 单一评分 0-1
+```
+
+**升级后（多维度）：**
+```python
+@dataclass
+class Scene:
+    """场景 — 由多个 Whisper segment 逻辑分组而成"""
+    scene_id: int                  # 场景编号
+    start: float                   # 开始时间（秒）
+    end: float                     # 结束时间（秒）
+    segment_ids: list[int]         # 包含的 Whisper segment 索引
+    text: str                      # 场景完整文本
+
+    # LLM 标注结果
+    scene_type: str                # 类型: Dialogue / Comedy / Fight / Romance / Speech / Teaching / Transition / Music / B-roll
+    tags: list[str]                # 标签: [搞笑, 情绪爆发, 冲突, 高能]
+    summary: str                   # 场景简短描述（1-2 句话）
+
+    # 多维评分（0-10 分制）
+    multi_score: dict[str, float]  # {hook, emotion, comedy, action, information, suspense, climax, viral}
+
+@dataclass
+class ClipCandidate:
+    """剪辑候选 — 由 Scene 经规则引擎筛选后生成"""
+    scene: Scene
+    composite_score: float         # 根据 preset 权重计算的综合分
+    rank: int                      # 排序位置
+    selected: bool                 # 是否被最终选中
+```
+
+---
+
+#### 4.3 功能模块设计
+
+##### 模块 1：Scene Detection（场景切分）
+
+**当前方案（MVP）：基于 Whisper segment 逻辑分组**
+- 将连续的 Whisper segment 按语义分组为 Scene
+- 分组规则：
+  - 时间间隔 > 阈值（默认 5 秒静音）→ 新 Scene
+  - 说话人变化（后续通过 VAD 或音频特征检测）
+  - 话题变化（LLM 判断）
+- 每个 Scene 包含多个 segment，形成独立的内容块
+
+**预留接口（未来升级）：**
+```python
+class SceneDetector(ABC):
+    """场景检测器抽象基类"""
+
+    @abstractmethod
+    def detect_scenes(
+        self,
+        segments: list[Segment],
+        video_path: str | None = None,  # OpenCV 方案需要视频文件
+    ) -> list[Scene]:
+        ...
+
+class WhisperSegmentDetector(SceneDetector):
+    """基于 Whisper segment 逻辑分组的检测器（MVP）"""
+    ...
+
+class OpenCVSceneDetector(SceneDetector):
+    """基于 OpenCV 帧差异的场景检测器（未来）"""
+    ...
+```
+
+##### 模块 2：LLM Scene 标注
+
+**LLM 输出格式（每个 Scene 独立输出）：**
+```json
+{
+  "scene_id": 15,
+  "scene_type": "Comedy",
+  "tags": ["搞笑", "情绪爆发", "冲突", "高能"],
+  "multi_score": {
+    "hook": 9.6,
+    "emotion": 8.8,
+    "comedy": 9.6,
+    "action": 1.2,
+    "information": 3.1,
+    "suspense": 4.0,
+    "climax": 7.5,
+    "viral": 9.1
+  },
+  "summary": "主角在这里遭遇了……（1-2 句话描述）"
+}
+```
+
+**LLM 调用策略：**
+- 复用现有分段转录策略：长视频按 chunk 分组，每个 chunk 内的 Scene 批量提交给 LLM
+- 避免单个 prompt 超过上下文窗口
+- 每个 chunk 独立调用，结果合并
+
+##### 模块 3：Clip Mode（切片模式）
+
+用户通过 `--mode` 指定剪辑类型：
+
+| 模式 | 说明 | 优先维度 |
+|------|------|----------|
+| `comedy` | 搞笑片段 | comedy 80%, humor 20% |
+| `action` | 打斗/动作片段 | action 70%, suspense 30% |
+| `emotion` | 情绪片段（哭、吵架、反转） | emotion 60%, climax 40% |
+| `dialogue` | 文戏/台词/名场面 | information 40%, dialogue 30%, hook 30% |
+| `knowledge` | 知识点/教学/干货 | information 80%, education 20% |
+| `hook` | 前三秒最吸引人的片段 | hook 90%, viral 10% |
+| `viral` | 综合爆款（AI 综合判断） | 见下方权重公式 |
+| `all` | 不限制类型，全量输出 | 按综合分排序 |
+
+`viral` 模式默认权重：
+```
+Hook:     30%
+Emotion:  25%
+Comedy:   20%
+Conflict: 15%
+Info:     10%
+```
+
+##### 模块 4：Clip Count（片段数量控制）
+
+```bash
+--clips 5     # 输出 Top 5
+--clips 20    # 输出 20 个素材
+--clips 0     # 不限制数量（默认行为）
+```
+
+##### 模块 5：Duration Planner（成片时长规划）
+
+```bash
+--duration 60s    # 目标 60 秒成片
+--duration 180s   # 目标 3 分钟成片
+```
+
+AI 自动规划结构：
+- 60s → 约 3 个高潮片段（15s Hook + 20s 冲突 + 25s 结尾）
+- 180s → 约 5 个高潮 + 2 个过渡 + 1 个 Ending
+- 片段长度动态调整，不完全由内容决定（见模块 6）
+
+##### 模块 6：Dynamic Clip（动态片段长度）
+
+- 不以固定时长（如 30 秒）裁剪
+- 以 Scene 边界作为剪辑点
+- 片段长度由内容自然结束点决定（可能 18s / 43s / 91s）
+- Duration Planner 在组合时考虑总时长约束，但不截断单个 Scene
+
+##### 模块 7：Auto Diversity（自动去重）
+
+**问题：** AI 常输出时间相邻的多个片段（12:10, 12:20, 12:35, 12:48），实际属于同一段内容。
+
+**解决方案：**
+```python
+def diversify(
+    candidates: list[ClipCandidate],
+    min_gap: float = 120.0,    # 最小间隔（秒），默认 2 分钟
+) -> list[ClipCandidate]:
+    """同一时间区域内只保留最高分的片段"""
+    ...
+```
+
+- 按时间排序候选片段
+- 滑动窗口检测：与已选中片段距离 < min_gap 的，只保留最高分
+- 确保输出的片段分布在视频的不同区域
+
+##### 模块 8：Category Weight（平台预设权重）
+
+```bash
+--preset douyin     # 抖音权重
+--preset youtube    # YouTube 权重
+--preset bilibili   # B 站权重
+--preset custom     # 自定义权重（需配合 --weights）
+```
+
+预设权重表：
+
+| 维度 | douyin | youtube | bilibili |
+|------|--------|---------|----------|
+| Hook | 40% | 20% | 15% |
+| Emotion | 30% | 10% | 20% |
+| Conflict | 20% | 10% | 10% |
+| Information | 10% | 50% | 35% |
+| Comedy | 0% | 10% | 25% |
+| Story | 0% | 30% | 20% |
+
+权重配置可持久化为 JSON 文件，支持用户自定义：
+```json
+{
+  "name": "kuaishou",
+  "weights": {
+    "hook": 0.35,
+    "emotion": 0.30,
+    "comedy": 0.20,
+    "conflict": 0.10,
+    "information": 0.05
+  }
+}
+```
+
+##### 模块 9：用户自定义 Prompt
+
+```bash
+videoagent clip movie.mp4 --prompt "切情侣吵架片段"
+videoagent clip movie.mp4 --prompt "切所有名场面"
+videoagent clip movie.mp4 --prompt "只切女性角色高光"
+```
+
+- 用户 prompt 注入到 LLM Scene 标注的 system prompt 中
+- LLM 根据 prompt 调整标签和评分倾向
+- 可与 `--mode` 叠加使用（prompt 优先级更高）
+
+##### 模块 10：二阶段筛选（核心流程）
+
+```
+Stage 1 — LLM Scene 标注：
+  所有 Scene → LLM 批量打标签 + 多维评分
+  （复用分段策略，长视频分批调用）
+
+Stage 2 — 程序规则引擎：
+  Score Engine → 根据 preset 计算综合分
+  Filter Engine → Diversity 去重 + 数量/时长约束
+  Duration Planner → 按目标时长组合
+
+Stage 3 — LLM Final Review（可选）：
+  候选列表（如 20 个）→ LLM 最终精选（如 5 个）+ 重排序
+  "以下是 20 个候选片段，请选出最适合短视频的 5 个并排序"
+```
+
+---
+
+#### 4.4 CLI 命令设计
+
+```bash
+# 基础用法（兼容现有行为）
+videoagent clip report.json --video input.mp4
+
+# 新模式：按类型筛选
+videoagent clip report.json --video input.mp4 --mode comedy --clips 5
+videoagent clip report.json --video input.mp4 --mode action
+videoagent clip report.json --video input.mp4 --mode emotion
+
+# 平台预设
+videoagent clip report.json --video input.mp4 --preset douyin --clips 10
+videoagent clip report.json --video input.mp4 --preset bilibili
+
+# 时长约束
+videoagent clip report.json --video input.mp4 --duration 60s --mode viral
+videoagent clip report.json --video input.mp4 --duration 180s --preset youtube
+
+# 自定义 prompt
+videoagent clip report.json --video input.mp4 --prompt "切情侣吵架片段"
+videoagent clip report.json --video input.mp4 --prompt "只切名场面"
+
+# 组合使用
+videoagent clip report.json --video input.mp4 \
+    --mode viral --preset douyin --clips 10 --duration 180s
+
+# pipeline 全流程（增强）
+videoagent pipeline input.mp4 --clip --mode comedy --clips 5 --preset douyin
+```
+
+---
+
+#### 4.5 涉及文件
+
+```
+src/
+ ├── clip_engine/              # 新增：智能片段筛选引擎
+ │    ├── __init__.py
+ │    ├── scene_detector.py    # Scene Detection（Whisper segment 分组 + OpenCV 接口）
+ │    ├── scorer.py            # Score Engine（多维评分 + preset 权重计算）
+ │    ├── filter.py            # Filter Engine（Diversity 去重、数量/时长约束）
+ │    ├── planner.py           # Duration Planner（目标时长组合规划）
+ │    └── models.py            # Scene, ClipCandidate 数据模型
+ │
+ ├── analyze/
+ │    └── llm_analyzer.py      # 更新：新增 scene_analysis() 方法
+ │
+ └── main.py                   # 更新：clip 命令增加 --mode, --preset, --clips, --duration, --prompt
+```
+
+---
+
+#### 4.6 实施顺序
+
+| 步骤 | 内容 | 预估时间 | 依赖 |
+|------|------|----------|------|
+| **4.1** | 数据结构升级（Scene, ClipCandidate 模型） | 半天 | 无 |
+| **4.2** | Scene Detection（Whisper segment 分组 MVP） | 1 天 | 4.1 |
+| **4.3** | LLM Scene 标注 prompt + 分段调用 | 1 天 | 4.1, 4.2 |
+| **4.4** | Score Engine（preset 权重计算） | 半天 | 4.1 |
+| **4.5** | Filter Engine（Diversity 去重） | 半天 | 4.4 |
+| **4.6** | Clip Mode + Clip Count（CLI 参数） | 半天 | 4.4, 4.5 |
+| **4.7** | Duration Planner | 1 天 | 4.5 |
+| **4.8** | Category Weight（预设权重配置） | 半天 | 4.4 |
+| **4.9** | 用户自定义 Prompt | 半天 | 4.3 |
+| **4.10** | LLM Final Review（二阶段筛选） | 1 天 | 4.3, 4.5 |
+| **4.11** | CLI 集成 + 端到端测试 | 1 天 | 以上全部 |
+
+**优先实现（MVP）：4.1 → 4.2 → 4.3 → 4.4 → 4.5 → 4.6**
+- 这几步完成后即可实现 `--mode` + `--clips` + `--preset` + Diversity 去重
+- 纯程序逻辑部分（4.4/4.5）开发成本低、可测试性强
+- 效果提升明显，可快速验证方向
+
+---
+
+### 5. 多语言混合视频支持
 
 ---
 

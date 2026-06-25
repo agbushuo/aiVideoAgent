@@ -1,8 +1,8 @@
 # VideoAgent 项目架构规划
 
 > 创建日期: 2026-06-22  
-> 最后更新: 2026-06-23  
-> 状态: Phase 1-3 已完成，批量处理已实现
+> 最后更新: 2026-06-25  
+> 状态: Phase 1-3 已完成，批量处理已实现，Smart Clip Engine v2.0 规划中
 
 ---
 
@@ -61,13 +61,22 @@ aiVideoAgent/
 │   │   │                           #   - load_model()
 │   │   │                           #   - transcribe() → TranscriptResult
 │   │   │                           #   - unload()
-│   │   └── models.py           # 数据模型 (Segment, TranscriptResult)
+│   │   ├── models.py           # 数据模型 (Segment, TranscriptResult)
+│   │   └── merger.py           # 分段转录去重合并
 │   │
 │   ├── analyze/
 │   │   ├── __init__.py
 │   │   └── llm_analyzer.py     # LLM 分析引擎
-│   │                           #   - analyze() → AnalysisReport
-│   │                           #   - Highlight, AnalysisReport (dataclass)
+│   │                           #   - analyze() → AnalysisReport (兼容旧版)
+│   │                           #   - scene_analysis() → list[Scene] (新版)
+│   │
+│   ├── clip_engine/            # 新增：智能片段筛选引擎 (Smart Clip Engine v2.0)
+│   │   ├── __init__.py
+│   │   ├── models.py           # Scene, ClipCandidate 数据模型
+│   │   ├── scene_detector.py   # Scene Detection（Whisper segment 分组 + OpenCV 接口）
+│   │   ├── scorer.py           # Score Engine（多维评分 + preset 权重计算）
+│   │   ├── filter.py           # Filter Engine（Diversity 去重、数量/时长约束）
+│   │   └── planner.py          # Duration Planner（目标时长组合规划）
 │   │
 │   ├── edit/
 │   │   ├── __init__.py
@@ -154,6 +163,136 @@ class AnalysisReport:
 ### 4.3 输出格式
 
 **JSON 报告** (`outputs/reports/video_20260622.json`):
+
+### 4.4 Smart Clip Engine 数据流
+
+#### 4.4.1 Scene 模型
+
+```python
+# 输入: TranscriptResult
+# 输出: list[Scene]
+
+@dataclass
+class Scene:
+    """场景 — 由多个 Whisper segment 逻辑分组而成"""
+    scene_id: int                  # 场景编号
+    start: float                   # 开始时间（秒）
+    end: float                     # 结束时间（秒）
+    segment_ids: list[int]         # 包含的 Whisper segment 索引
+    text: str                      # 场景完整文本
+
+    # LLM 标注结果
+    scene_type: str                # Dialogue / Comedy / Fight / Romance / ...
+    tags: list[str]                # [搞笑, 情绪爆发, 冲突, 高能]
+    summary: str                   # 场景简短描述
+
+    # 多维评分（0-10 分制）
+    multi_score: dict[str, float]  # {hook, emotion, comedy, action, ...}
+```
+
+#### 4.4.2 ClipCandidate 模型
+
+```python
+@dataclass
+class ClipCandidate:
+    """剪辑候选 — 由 Scene 经规则引擎筛选后生成"""
+    scene: Scene
+    composite_score: float         # 根据 preset 权重计算的综合分
+    rank: int                      # 排序位置
+    selected: bool                 # 是否被最终选中
+```
+
+#### 4.4.3 数据流
+
+```
+TranscriptResult (Whisper segment 列表)
+    │
+    ▼  [SceneDetector.detect_scenes()]
+list[Scene] (场景列表，含时间边界和文本)
+    │
+    ▼  [LLMAnalyzer.scene_analysis()] — 分批调用
+list[Scene] (每个 Scene 填充 scene_type, tags, multi_score, summary)
+    │
+    ▼  [Scorer.compute()] — 根据 preset 权重计算综合分
+list[ClipCandidate] (含 composite_score)
+    │
+    ▼  [FilterEngine.filter()] — Diversity 去重 + 数量/时长约束
+list[ClipCandidate] (筛选后的候选)
+    │
+    ▼  [DurationPlanner.plan()] — 按目标时长组合
+ClipPlan (最终的剪辑方案，含片段顺序和时长分配)
+    │
+    ▼  [LLMAnalyzer.final_review()] — 可选，最终精选
+ClipPlan (LLM 重排序后的最终方案)
+    │
+    ▼  [Clipper.clips_from_report()] — ffmpeg 裁剪 + 拼接
+输出视频文件
+```
+
+#### 4.4.4 Scene Detection 接口设计
+
+```python
+class SceneDetector(ABC):
+    """场景检测器抽象基类 — 预留多种检测方案"""
+
+    @abstractmethod
+    def detect_scenes(
+        self,
+        segments: list[Segment],
+        video_path: str | None = None,
+    ) -> list[Scene]:
+        ...
+
+class WhisperSegmentDetector(SceneDetector):
+    """基于 Whisper segment 逻辑分组（MVP 方案）
+
+    分组规则：
+    - 时间间隔 > threshold（默认 5 秒）→ 新 Scene
+    - 纯文本分析，无需视频文件
+    """
+    ...
+
+class OpenCVSceneDetector(SceneDetector):
+    """基于 OpenCV 帧差异的场景检测（未来方案）
+
+    需要视频文件输入，使用 cv2.scene.detect() 或自定义帧差异算法。
+    """
+    ...
+```
+
+---
+
+## 五、CLI 命令设计 (typer)
+
+```bash
+# 转录视频 → 字幕
+videoagent transcribe input.mkv --language zh --output-dir ./outputs
+
+# 分析字幕 → 报告
+videoagent analyze ./outputs/subtitles/input.json --output-dir ./outputs
+
+# 从报告提取亮点片段（兼容旧版）
+videoagent clip ./outputs/reports/input.json --merge --min-score 0.7
+
+# 智能片段筛选（新版 Smart Clip Engine）
+videoagent clip ./outputs/reports/input.json --video input.mp4 --mode comedy --clips 5
+videoagent clip ./outputs/reports/input.json --video input.mp4 --preset douyin --duration 60s
+videoagent clip ./outputs/reports/input.json --video input.mp4 --prompt "切情侣吵架片段"
+
+# 一键全流程 (转录 + 分析)
+videoagent pipeline input.mkv --language zh
+
+# 一键全流程 + 智能剪辑
+videoagent pipeline input.mkv --clip --mode viral --preset douyin --clips 10
+
+# 批量处理多个视频
+videoagent batch "D:/videos/" --clip --min-score 0.7
+videoagent batch "D:/videos/*.mp4" --clip --no-merge
+
+# 查看帮助
+videoagent --help
+videoagent transcribe --help
+```
 ```json
 {
   "video": "input.mkv",
@@ -343,8 +482,17 @@ test = ["pytest>=8.0", "pytest-asyncio"]
 ### Phase 4: 功能增强 (进行中)
 - [ ] 并发控制 (`--workers N`)
 - [ ] 剪辑后处理增强（字幕烧录、封面生成、元数据嵌入）
-- [ ] 长视频分段转录策略
-- [ ] 智能片段筛选（去重、时长约束、多轮分析）
+- [ ] Smart Clip Engine v2.0（智能片段筛选引擎）
+  - [ ] Scene Detection（Whisper segment 分组 MVP）
+  - [ ] 多维评分数据结构（Scene, ClipCandidate）
+  - [ ] LLM Scene 标注（分段调用）
+  - [ ] Score Engine（preset 权重计算）
+  - [ ] Filter Engine（Diversity 去重）
+  - [ ] Clip Mode + Clip Count（CLI 参数）
+  - [ ] Duration Planner（目标时长组合）
+  - [ ] Category Weight（平台预设）
+  - [ ] 用户自定义 Prompt
+  - [ ] LLM Final Review（二阶段筛选）
 
 ### Phase 5: Web 服务 (未来)
 - [ ] FastAPI 服务化

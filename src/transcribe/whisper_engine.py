@@ -274,14 +274,19 @@ class WhisperEngine:
 
         for i, chunk in enumerate(chunks):
             chunk_start = time.time()
+            # 第一个 chunk 用用户指定的语言（可为 auto），后续 chunk 统一用第一个检测到的语言
+            # 避免方言场景下各 chunk 语言检测结果不一致
+            chunk_language = detected_language if detected_language is not None else language
+
             console.print(
                 f"[dim]Step 3: 转录 chunk {i + 1}/{len(chunks)} "
-                f"({chunk.start_time:.0f}s - {chunk.end_time:.0f}s)[/dim]"
+                f"({chunk.start_time:.0f}s - {chunk.end_time:.0f}s)"
+                f"[language={chunk_language or 'auto'}][/dim]"
             )
 
             whisper_result = model.transcribe(
                 str(chunk.path),
-                language=language,
+                language=chunk_language,
                 fp16=self.fp16,
                 verbose=verbose,
                 beam_size=self.beam_size,
