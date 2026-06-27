@@ -1,192 +1,184 @@
 # 变更记录
 
-## 2026-06-25
+## 2026-06-27
 
-### 项目可视化仪表盘
-- **新增** `dashboard.html`：交互式项目仪表盘，包含总览、架构关系图、数据流程图、模块详情、CLI 命令参考、路线图进度
-- **新增** 模块依赖关系图 (Mermaid)
-- **新增** 目录结构思维导图 (Mermaid)
-- **新增** 传统管线 + Smart Clip v2.0 数据流时序图
-- **新增** 长视频分段转录策略流程图
-- **新增** 8 个模块详情卡片（可点击展开接口文档）
-- **新增** CLI 命令速查表
-- **新增** Phase 1-5 路线图进度条
+### 设置保存同步写入 config.yaml
+- **更新** `src/web/settings_manager.py`：`save_settings()` 调用 `_sync_config_yaml()` 将 LLM 设置写入 `config.yaml` 的 llm 段（正则匹配替换 provider/model/endpoint/api_key/temperature/max_tokens），新增 `get_active_llm_config_from()` 从内存字典读取配置（不读文件），`DEFAULT_SETTINGS` 新增 `theme`/`accentColor` 默认值，`load_settings()` 合并逻辑扩展为处理 `theme` 和 `accentColor`
 
-### Smart Clip Engine v2.0 单元测试（87 个测试全部通过）
-- **新增** `tests/test_clip_engine.py`：Smart Clip Engine v2.0 完整单元测试
-  - TestScene（8 个）：创建、默认值、from_segments、序列化往返、duration/mid_point 属性
-  - TestClipCandidate（3 个）：创建、序列化往返、默认值
-  - TestClipResult（4 个）：创建、JSON 导出、序列化往返
-  - TestWhisperSegmentDetector（10 个）：基本分组、间隔检测、空输入、合并短场景、拆分长场景、无序输入、OpenCV 预留接口
-  - TestPresetWeights（12 个）：所有预设加载、未知预设报错、分数计算、自定义权重、JSON 文件加载
-  - TestClipMode（3 个）：模式加载、列表、未知模式报错
-  - TestScoreEngine（9 个）：预设评分、排序、排名分配、clip_mode、自定义权重、阈值过滤
-  - TestClipFilter（9 个）：Diversity 去重、数量限制、时长约束、selected 标记、gap 计算
-  - TestFilterHelpers（3 个）：diversify、select_top、select_by_duration 便捷函数
-  - TestDurationPlanner（7 个）：60s/180s 模板、空输入、时间顺序、高分优先、duration_ratio
-  - TestDurationHelpers（4 个）：plan_duration、list_duration_templates、show_duration_template
-  - TestDurationSlots（6 个）：槽位数据结构、模板结构、动态生成（短/中/长）
-  - TestFinalReviewer（6 个）：空输入、LLM 调用、结果序列化、target_duration 传递
-  - TestFinalReviewHelper（1 个）：便捷函数
-  - TestFullPipeline（3 个）：完整数据流集成、ClipResult 构建、weights.json 加载验证
-- **验证结果**：87 passed in 0.14s
+### 模型设置同步本地缓存（localStorage 回退）
+- **更新** `frontend/src/lib/api.ts`：用户设置读写增加 localStorage 同步。`getUserSettings()` 成功后缓存到 localStorage，`saveUserSettings()` 成功后同步写入。新增 `getUserSettingsWithFallback()` 优先 API，失败回退本地缓存。新增 `saveUserSettingsWithFallback()` API 失败时本地持久化并返回 false。新增 `mergeSettings()` 深度合并局部更新
+- **更新** `frontend/src/app/settings/page.tsx`：加载改用 `getUserSettingsWithFallback()`，保存改用 `saveUserSettingsWithFallback()`。保存按钮区分服务端保存（绿色）和本地缓存（琥珀色 "已本地缓存"）
+- **更新** `frontend/messages/zh.json`：settings 命名空间新增 `saving` 翻译键
+- **更新** `frontend/messages/en.json`：同上
 
-### Smart Clip Engine v2.0 MVP 实现（4.1-4.6 代码实现）
-- **新增** `src/clip_engine/`：智能片段筛选引擎模块
-  - `models.py` — Scene, ClipCandidate, ClipResult 数据模型
-    - Scene: 场景对象，包含 segment_ids, text, scene_type, tags, summary, multi_score
-    - ClipCandidate: 剪辑候选，包含 composite_score, rank, selected
-    - ClipResult: 完整剪辑结果，包含 all_candidates, selected_candidates
-    - MULTI_SCORE_DIMENSIONS: 8 个评分维度（hook, emotion, comedy, action, information, suspense, climax, viral）
-    - SCENE_TYPES: 10 种场景类型
-  - `scene_detector.py` — 场景检测器
-    - SceneDetector 抽象基类（预留 OpenCV 接口）
-    - WhisperSegmentDetector: 基于时间间隔分组（gap_threshold, min/max_scene_duration）
-    - OpenCVSceneDetector: 预留接口（NotImplementedError）
-  - `scorer.py` — 评分引擎
-    - PresetWeights: 预设权重（douyin/youtube/bilibili/viral/all）
-    - ClipMode: 剪辑模式权重（comedy/action/emotion/dialogue/knowledge/hook/viral/all）
-    - ScoreEngine: 综合评分计算，支持 preset + clip_mode + custom_weights
-  - `filter.py` — 过滤引擎
-    - ClipFilter: Diversity 去重（min_gap 滑动窗口）、数量控制（max_clips）、时长约束（target_duration）
-    - diversify(), select_top(), select_by_duration() 便捷函数
-- **新增** `prompts/scene_analysis.md`：LLM Scene 标注 prompt
-  - 场景类型识别、标签打标、多维评分（0-10 分制）、摘要生成
-- **更新** `src/analyze/llm_analyzer.py`：
-  - 新增 `_scene_prompt` prompt 加载
-  - 新增 `_build_scenes_text()` — 构建场景文本
-  - 新增 `_parse_scene_response()` — 解析 LLM 标注响应
-  - 新增 `analyze_scenes()` — 对 Scene 列表进行 LLM 标注（支持分批、用户 prompt 注入）
-- **更新** `src/main.py`：
-  - 新增 `_parse_duration()` — 解析时长字符串（60s, 3m, 1h 等格式）
-  - 新增 `_get_video_path_from_report()` — 从报告读取视频路径
-  - 新增 `_run_smart_clip()` — Smart Clip Engine v2.0 完整流程
-  - `clip` 命令新增参数: `--smart-clip`, `--mode`, `--preset`, `--clips`, `--duration`, `--prompt`, `--min-gap`, `--transcript`
-  - `pipeline` 命令新增参数: `--smart-clip`, `--mode`, `--preset`, `--clips`, `--duration`, `--prompt`
-- **更新** `ROADMAP.md`：
-  - 版本升至 v0.3.0
-  - Smart Clip Engine v2.0 标记为 ✅ MVP 已完成（4.1-4.6）
-  - 新增待实现项（4.7-4.11）
-- **设计决策**：
-  - Scene Detection MVP 完全基于 Whisper segment 时间间隔分组，不依赖视频文件
-  - 保留 SceneDetector 抽象基类，后续可切换 OpenCV 帧差异方案
-  - preset 权重使用模块级常量表（避免 dataclass mutable default 问题）
-  - LLM 标注复用现有分段策略，长视频分批处理（max_scenes_per_batch=50）
-  - CLI 通过 --smart-clip 参数切换新旧模式，完全兼容现有行为
+### 侧边栏导航重构 + 设置页面（前后端联动）
+- **更新** `frontend/src/components/layout/Sidebar.tsx`：导航改为"预设"、"全部任务"、"设置"三项，"查看全部任务"从底部移至导航第二位，"管线"重命名为"设置"并更换 Settings 图标，底部改为版本信息
+- **更新** `frontend/src/app/settings/page.tsx`：设置页面改为"外观"和"模型"两个标签页，模型配置合并为统一页面，通过"本地模型/在线模型"按钮切换，数据通过 API 持久化到后端
+- **新增** `src/web/settings_manager.py`：用户设置管理器，读写 `data/settings.json`，提供 `merge_llm_into_config()` 将用户设置合并到 config.yaml（用户设置优先级更高）
+- **更新** `src/web/app.py`：新增 `GET/PUT /api/settings` 接口，`rerun_stage` 和 `run_stage` 端点自动合并用户 LLM 设置
+- **更新** `src/web/pipeline_runner.py`：管线启动时合并用户 LLM 设置，覆盖 config.yaml 默认值
+- **更新** `frontend/src/lib/api.ts`：新增 `getUserSettings()`、`saveUserSettings()` API 客户端方法
+- **更新** `frontend/messages/zh.json`：sidebar 命名空间新增 `tasks`、`settings` 键，settings 命名空间合并本地/在线模型为 `tabModel` + `modelType` 切换，新增 `temperatureHint` 翻译键
+- **更新** `frontend/messages/en.json`：同上英文翻译
 
-### Smart Clip Engine v2.0 架构规划 + ROADMAP 结构调整（文档更新）
-- **更新** `ROADMAP.md`：
-  - 将"3. 长视频分段转录策略"标记为 ✅ 已完成（完成日期 2026-06-24）
-  - 所有子步骤（3.1-3.5）标记为已完成，实施顺序表增加"状态"列
-  - 新增真实验证记录（140 分钟电影全流程测试数据）
-  - "已完成"汇总新增分段转录策略条目（含音频预处理、overlap 去重、参数优化等细节）
-  - 将"4. 智能片段筛选"升级为完整的 Smart Clip Engine v2.0 规划
-    - 新增四层架构：AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化
-    - 新增十个功能模块详细设计
-    - 新增 CLI 命令设计、数据结构、preset 权重、实施顺序
-- **更新** `ARCHITECTURE.md`：
-  - 新增十个功能模块详细设计：Scene Detection、Clip Mode、Clip Count、Duration Planner、Dynamic Clip、Scene Type、Quality Score、Auto Diversity、Category Weight、二阶段筛选
-  - 新增 CLI 命令设计（`--mode`, `--preset`, `--clips`, `--duration`, `--prompt`）
-  - 新增实施顺序表（11 个步骤，MVP 优先 4.1-4.6）
-  - 新增数据结构设计（Scene, ClipCandidate 模型）
-  - 新增 preset 权重配置表（douyin/youtube/bilibili）
-  - 新增 Scene Detection 接口设计（抽象基类 + Whisper segment MVP + OpenCV 预留）
-- **更新** `ARCHITECTURE.md`：
-  - 项目结构新增 `src/clip_engine/` 模块（models.py, scene_detector.py, scorer.py, filter.py, planner.py）
-  - 核心数据流新增 4.4 节（Scene 模型、ClipCandidate 模型、完整数据流图、Scene Detection 接口设计）
-  - CLI 命令设计新增智能片段筛选参数
-  - 实施路线图 Phase 4 细化 Smart Clip Engine v2.0 的子任务清单
-- **设计决策**：
-  - Scene Detection MVP 完全依赖 Whisper segment 逻辑分组，不依赖视频文件
-  - 保留 `SceneDetector` 抽象基类接口，后续可切换 OpenCV 帧差异方案
-  - preset 权重配置支持 JSON 文件扩展，用户可自定义平台权重
-  - LLM 调用复用分段转录策略，长视频分批处理，避免上下文截断
-  - 优先实现规则引擎（4.4/4.5）和策略引擎（4.6），成本最低、效果最明显
+### 预设页面左下角添加返回主页按钮
+- **更新** `frontend/src/components/presets/PresetList.tsx`：底部新增 Home 图标 + "返回主页" 链接，使用 `next/link` 跳转
+- **更新** `frontend/messages/zh.json`：presets 命名空间新增 `backToHome` 翻译键
+- **更新** `frontend/messages/en.json`：同上
 
-### 修复分段转录时方言场景语言检测不一致
-- **修复** `src/transcribe/whisper_engine.py`：`_transcribe_segmented()` 中第一个 chunk 检测到的语言复用给后续所有 chunk，避免方言场景下各 chunk 被误判为不同语言（如 Russian/Dutch）
-### 修复语言强制导致英文视频转录乱码问题
-- **修复** `src/transcribe/whisper_engine.py`：`transcribe()` / `_transcribe_direct()` / `_transcribe_segmented()` 的 `language` 参数默认值从 `"zh"` 改为 `None`（Whisper 自动检测）
-- **修复** `src/main.py`：`transcribe` / `pipeline` / `batch` CLI 命令的 `--language` 默认值从 `"zh"` 改为 `None`，显示时 `None` 显示为 `auto`
-- **修复** `src/pipeline.py`：`process_video()` 的 `language` 默认值从 `"zh"` 改为 `None`
-- **修复** `src/transcribe/whisper_engine.py`：分段转录时从第一个 chunk 的 Whisper 结果获取检测到的语言，传递给合并函数
-- **新增** `src/transcribe/merger.py`：`_merge_consecutive_identical()` — 合并连续相同文本的 segment，消除 Whisper 对纯音乐/音效片段的重复输出
-- **修复** `src/transcribe/merger.py`：`build_transcript_result()` / `merge_chunk_transcripts()` 的 `language` 默认值从 `"zh"` 改为 `None`
-- **根因**：电影视频（宇宙巨人、星球大战）的音频为英文，强制 `language="zh"` 导致 Whisper 用中文模式转录英文音频，输出全为乱码。中文视频（沧浪之水）不受影响是因为语言匹配。
-- **验证**：星球大战（132min 英文电影）测试，Whisper 正确检测为英文，LLM 提取 5 个亮点
-- **发现**：107-118 分钟处有 11 分钟纯音乐/音效片段，Whisper 持续输出重复文本。这是 Whisper 本身的固有行为（非代码 bug），`_merge_consecutive_identical()` 优化后大幅减少重复 segment 数量
+### 剪辑模式和平台预设选项 i18n 国际化
+- **更新** `frontend/messages/zh.json`：workflow 命名空间新增 clipModes（8 个剪辑模式中文标签）和 presetLabels（5 个平台预设中文标签）
+- **更新** `frontend/messages/en.json`：同上英文标签
+- **更新** `frontend/src/components/workflow/ConfigPanel.tsx`：使用 useTranslations("workflow") 渲染剪辑模式和预设下拉框的本地化标签
+- **更新** `frontend/src/components/presets/PresetEditor.tsx`：使用 useTranslations("workflow") 渲染剪辑模式和预设下拉框的本地化标签
 
-## 2026-06-24
+### 修复预设页面 i18n 命名空间解析错误
+- **更新** `frontend/messages/zh.json`：新增 presets 命名空间（含 scoreDims 子对象），使其与 next-intl 读取的 `frontend/messages/` 路径一致
+- **更新** `frontend/messages/en.json`：同上英文翻译
 
-### 分段转录策略真实视频测试，修复 chunk_audio ffprobe 路径 bug
-- **修复** `src/utils/audio_preprocess.py`：`chunk_audio()` 新增 `ffprobe_path` 参数，内部 `get_audio_duration()` 使用正确的 ffprobe 而非 ffmpeg
-- **修复** `src/transcribe/whisper_engine.py`：调用 `chunk_audio()` 时传递 `ffprobe_path`
-- **修复** `config.yaml`：LLM timeout 从 300s 增至 1800s（140 分钟电影转录文本太大，原超时不够）
-- **验证** 88 个单元测试全部通过
-- **验证** 140 分钟电影全流程测试成功：
-  - 转录：Whisper large-v3 分段转录 10 chunks，合并后 7668 segments，时间排序正确，无负时长
-  - 分析：LLM 提取 4 个亮点（评分 0.8-0.95）
-  - 剪辑：4 个独立片段 + 精华视频（110MB，6.8 分钟）
-- **发现** Bash glob 展开问题：`videoagent batch 'E:/video/*.mp4'` 在 Git Bash 中会被 shell 提前展开为多个参数，导致 typer 报错。需通过 Python 脚本或 `discover_videos()` 直接调用。
-- **验证** 批量操作全流程测试（两部电影串行处理）：
-  - 电影1《宇宙巨人：希曼崛起》（140min）：转录10 chunks共7171 segments（1503.6s），LLM提取6个亮点（261.8s），剪辑6个片段+精华视频（3.1MB），总耗时1778.4s
-  - 电影2《星球大战：曼达洛人与古古》（132min）：转录9 chunks共4393 segments（1272.4s，去重1条），LLM分析返回空JSON触发正则回退（0个亮点），总耗时1717.2s
-  - 合并去重功能正常运作，时间戳排序正确
-  - 批处理CSV汇总报告生成正常
-  - **发现** 电影2的LLM分析超时问题：4393段转录文本过大，LLM在超时前返回空JSON。可能需要进一步优化prompt或分段分析策略
+### 实现预设管理界面（Preset Manager）
+- **新增** `src/web/preset_manager.py`：PresetManager 单例类，管理 data/presets.json 持久化，支持 CRUD、复制、Prompt 模板管理
+- **更新** `src/web/app.py`：新增预设管理 API 端点（GET/PUT/DELETE /api/presets, POST /api/presets/{name}/duplicate）和 Prompt 管理端点（GET/PUT /api/prompts）
+- **新增** `frontend/src/app/presets/page.tsx`：预设管理页面，左侧列表 + 右侧编辑器布局
+- **新增** `frontend/src/components/presets/PresetList.tsx`：预设列表组件，支持选择、复制、新建
+- **新增** `frontend/src/components/presets/PresetEditor.tsx`：预设编辑器，含管线参数、评分权重、Prompt 模板三个标签页
+- **新增** `frontend/src/components/presets/PromptEditor.tsx`：Prompt 编辑器组件，支持预设级覆盖
+- **更新** `frontend/src/types/config.ts`：新增 PresetData、PromptInfo 接口
+- **更新** `frontend/src/lib/api.ts`：新增预设 CRUD 和 Prompt 管理的 API 客户端方法
+- **更新** `messages/zh.json`：新增 presets 命名空间翻译
+- **更新** `messages/en.json`：新增 presets 命名空间翻译
 
-### 长视频分段转录策略（Segment-aware）功能实现 3.1-3.3
-- **新增** `src/utils/audio_preprocess.py`：音频预处理模块
-  - `extract_audio()` — FFmpeg 提取 16kHz mono WAV
-  - `loudness_normalize()` — 响度归一化（EBU R128，两遍编码）
-  - `get_audio_duration()` — ffprobe 获取音频时长
-  - `chunk_audio()` — 按固定时长切分音频，支持 overlap
-  - `should_segment_transcribe()` — 根据 GPU 显存 + 视频时长自动判断是否分段
-    - GPU < 8GB：阈值 20 分钟；GPU 8-16GB：阈值 60 分钟；默认 30 分钟
-    - 极短视频（< 5 分钟）永远不分段
-  - `preprocess_audio_for_transcribe()` — 一站式预处理流水线
-  - `AudioChunk` / `AudioPreprocessResult` 数据类
-- **新增** `src/transcribe/merger.py`：Segment 级去重合并器
-  - `apply_time_offset()` — 给 chunk segment 加全局时间戳偏移
-  - `compute_text_similarity()` — 前 N 字符 + Levenshtein 混合相似度计算
-    - 快速路径：前 20 字符比较，完全不同则直接返回低分
-    - 精确路径：python-Levenshtein（有则用）或内置 DP 回退
-  - `merge_segments()` — 多 chunk segment 合并去重
-    - 时间重叠 + 文本相似度 > 阈值 → 保留范围更广的整段
-    - 相似度 < 阈值 → 都保留（不同内容恰好重叠）
-  - `build_transcript_result()` — 构建最终 TranscriptResult
-  - `merge_chunk_transcripts()` — 一站式合并接口
-  - `ChunkTranscript` / `MergeStats` 数据类
-- **更新** `src/transcribe/whisper_engine.py`：集成分段转录
-  - `WhisperEngine.__init__()` 新增分段配置参数（chunk_duration, overlap, threshold, similarity, loudness, beam_size, temperature_fallback, ffmpeg_path, ffprobe_path）
-  - `transcribe()` 自动检测音频时长，超过阈值时切换分段模式
-  - `_transcribe_direct()` — 原有直接转录逻辑（短视频）
-  - `_transcribe_segmented()` — 分段转录流程：预处理 → 切分 → 逐 chunk 转录 → 去重合并
-  - `_check_needs_segmented()` — 分段判断入口
-  - Whisper 参数优化：beam_size=5, temperature=[0, 0.5] fallback
-- **更新** `config.yaml`：新增 `whisper.segment_transcribe` 配置块
-  - threshold_minutes, chunk_duration, overlap, similarity_threshold
-  - normalize_loudness, beam_size, temperature_fallback
-- **更新** `src/main.py`：
-  - 新增 `_build_whisper_engine()` — 从配置构建 WhisperEngine（含分段参数）
-  - `transcribe` 和 `pipeline` 命令使用新构建函数
-- **更新** `src/pipeline.py`：`process_video()` 传递分段配置到 WhisperEngine
-- **新增** `tests/test_audio_preprocess.py`：音频预处理单元测试
-  - chunk 边界计算（单 chunk、多 chunk、无 overlap）
-  - 分段判断逻辑（短/长视频、GPU 显存影响）
-- **新增** `tests/test_merger.py`：Segment 合并去重单元测试
-  - 时间偏移、文本相似度、去重合并、范围选择、排序等
-- **注意**：以上代码仅通过单元测试验证，**未经真实视频外部验证**，分段转录流程的 FFmpeg 调用和 Whisper chunk 处理需要在实际长视频上测试
+### 移除时间轴（Timeline）模块
+- **更新** `frontend/src/components/layout/MainCanvas.tsx`：移除"时间轴"标签及其动态导入，只保留 Workflow 和场景两个标签
+- **删除** `frontend/src/components/timeline/`：删除整个时间轴组件目录（TimelineEditor、TimelineToolbar、TimelineCanvas、ClipRenderer、VideoPreview、ThumbnailPreview、Playhead、TimeRuler 共 8 个文件）
+- **删除** `frontend/src/stores/timelineStore.ts`：时间轴状态管理模块
+- **删除** `frontend/src/types/timeline.ts`：时间轴类型定义
 
-### 长视频分段转录策略升级为 Segment-aware 方案
-- **更新** `ROADMAP.md`：将"3. 长视频分段转录策略"从固定时间切分替换为 segment-aware 方案
-  - 新增 3.1 音频预处理（16kHz mono WAV, loudness normalize）
-  - 新增 3.2 音频粗切 + 时间 overlap（15min/chunk, 10s overlap）
-  - 新增 3.3 Whisper segment 级去重合并（核心升级，Levenshtein 相似度 > 0.8 去重）
-  - 新增 3.4 统一合并输出层（结构化 segment 列表，对上层透明）
-  - 新增 3.5 Whisper 执行策略优化（beam_size >= 5, temperature fallback）
-  - 新增 3.6 不做 VAD 的理由说明
-  - 新增完整流水线图和实施顺序表
+### 恢复左侧边栏导航链接，移除冗余项
+- **更新** `frontend/src/components/layout/Sidebar.tsx`：恢复预设和管线导航链接，移除"项目"和"运行历史"（功能已并入"查看全部任务"），"查看全部任务"移至底部
+
+### Workflow 画布放大 + ConfigPanel 布局优化
+- **更新** `frontend/src/components/layout/Layout.tsx`：新增全局 SSE 连接（`/api/events`），所有页面实时接收任务状态变更，无需打开任务详情页
+- **更新** `frontend/src/components/console/RunConsole.tsx`：移除重复的 SSE 连接（由 Layout 全局管理），只保留历史日志加载
+- **更新** `frontend/src/app/tasks/page.tsx`：任务列表页新增 5 秒轮询兜底，当有运行中任务时自动刷新
+- **更新** `frontend/src/components/workflow/WorkflowBuilder.tsx`：布局从"画布+右侧面板"改为"画布在上方+配置面板在下方全宽"，ConfigPanel 不再占用画布宽度
+- **更新** `frontend/src/components/workflow/ConfigPanel.tsx`：从右侧竖条面板改为底部全宽横条面板，参数项水平排列，未选中节点时显示紧凑提示
+- **更新** `frontend/src/components/workflow/ReactFlowCanvas.tsx`：初始缩放从 0.6 提升至 0.85，最大缩放从 1.5 提升至 2，外层容器改为 `h-full w-full`
+- **更新** `frontend/src/components/workflow/PipelineNode.tsx`：节点最小宽度从 180 增至 220，最大宽度 280，内边距和图标尺寸加大
+- **更新** `frontend/src/components/workflow/StageFormField.tsx`：表单字段间距加大
+
+### 修复旧版任务数据加载兼容性，添加批量删除功能
+- **更新** `src/web/task_manager.py`：`load()` 方法增加健壮的反序列化逻辑，兼容旧版 repr 格式数据（`TaskStatus.COMPLETED` 字符串、`TaskProgress(...)` / `LogEntry(...)` repr、`"True"`/`"False"` 字符串布尔值）
+- **更新** `src/web/task_manager.py`：`_serialize()` 增加 `Enum` 类型处理（输出 `.value`）和字符串布尔值修复，防止新数据再次序列化错误
+- **更新** `src/web/task_manager.py`：新增 `_parse_task_status()`、`_parse_bool()`、`_parse_float()`、`_parse_repr_string()` 解析辅助方法
+- **新增** `src/web/app.py`：`DELETE /api/tasks/bulk-delete` 批量删除接口，支持 `task_ids` 列表和 `delete_outputs` 参数（同时删除输出文件）
+- **新增** `frontend/src/lib/api.ts`：`bulkDeleteTasks()` API 客户端方法
+- **新增** `frontend/src/stores/taskStore.ts`：`selectedTaskIds` 选中状态、`toggleSelectTask()`、`selectAllTasks()`、`clearSelection()`、`bulkDeleteTasks()` 动作
+- **更新** `frontend/src/app/tasks/page.tsx`：任务列表新增复选框列、全选、批量操作栏、批量删除确认弹窗（含"同时删除输出文件"选项）
+- **新增** `frontend/messages/zh.json`：批量删除相关翻译键 `selectedCount`、`bulkDelete`、`cancel`
+- **新增** `frontend/messages/en.json`：批量删除相关翻译键 `selectedCount`、`bulkDelete`、`cancel`
+
+### 实现管线断点续跑（跳过已有转录）功能
+- **更新** `src/web/api_schemas.py`：`TaskCreateRequest` 新增 `skip_existing_transcript: bool = False` 字段
+- **更新** `src/web/task_manager.py`：`PipelineTask` 新增 `skip_existing_transcript: bool = False` 字段
+- **更新** `src/web/pipeline_runner.py`：转录阶段前检查 `outputs/{stem}/subtitles/{stem}.json`，文件存在且启用跳过时，用 `TranscriptResult.from_json()` 加载，跳过 Whisper 引擎
+- **更新** `src/utils/i18n.py`：新增后端翻译键 `pipe.stepSkippingTranscribe`、`pipe.loadingExistingTranscript`、`pipe.existingTranscriptLoaded`（zh/en）
+- **更新** `frontend/src/types/api.ts`：`TaskCreateRequest` 添加 `skip_existing_transcript?: boolean`
+- **更新** `frontend/src/components/workflow/WorkflowBuilder.tsx`：添加"跳过已有转录"复选框，创建任务时传递参数
+
+### 修复 LLM 标注阶段的 prompt 格式冲突 bug
+- **修复** `src/analyze/llm_analyzer.py`：`analyze_scenes()` 方法将 `prompt.format(scenes_text=...)` 改为 `re.sub()` 替换，避免 JSON 示例中的 `{}` 被 Python `str.format()` 误解析为占位符（`KeyError: '"scene_id"'`）
+- **修复** `prompts/final_review.md`：JSON 示例中的 `{}` 转义为 `{{}}`，防止同样的 `str.format()` 冲突
+
+### 修复 Smart Clip 管线 AnalysisReport 参数错误
+- **修复** `src/web/pipeline_runner.py`：Smart Clip 模式创建 `AnalysisReport` 时传了不存在的 `metadata` 参数导致 `TypeError`，移除该参数
+
+### 修复剪辑阶段 merge_clips 参数名错误
+- **修复** `src/web/pipeline_runner.py`：调用 `clipper.merge_clips()` 时参数名 `transition` 改为 `transition_duration`，匹配 `Clipper.merge_clips()` 方法签名
+
+### 任务持久化（后端重启不丢失任务）
+- **更新** `src/web/task_manager.py`：`TaskManager` 新增 `_task_to_dict()`、`save()`、`load()`、`_save_now()` 方法，任务数据序列化到 `data/tasks.json`
+- **更新** `src/web/task_manager.py`：`create_task()` 创建任务后自动调用 `_save_now()` 持久化
+- **更新** `src/web/app.py`：`lifespan` 启动时调用 `TaskManager().load()` 恢复任务，关闭时调用 `save()` 保存
+- **更新** `src/web/app.py`：任务取消和删除操作后调用 `save()` 持久化
+- **更新** `src/web/pipeline_runner.py`：管线在审核暂停点、完成、失败三个关键节点调用 `task_manager.save()` 持久化
+
+### 修复任务持久化序列化错误（全面加固）
+- **修复** `src/web/task_manager.py`：`_task_to_dict()` 的 `_serialize()` 函数增加 `try/except` 兜底，任何无法序列化的对象转为字符串而非抛出异常
+- **修复** `src/web/task_manager.py`：重写 `_serialize()` 类型判断顺序，先检查 `dict`/`list`/`tuple` 再检查 `is_dataclass`，避免 `list`/`dict` 类型被误判
+- **修复** `src/web/task_manager.py`：`load()` 方法在反序列化时重建 `TaskStatus` 枚举（JSON 中存储的是字符串），避免重启后 `task.status` 是字符串导致 `.value` 报错
+- **新增** `src/web/task_manager.py`：`PipelineTask` 新增 `status_str` 属性，安全返回状态字符串（兼容枚举和字符串两种形式）
+- **更新** `src/web/app.py`：所有 API 端点用 `status_str` 替代 `status.value`，状态比较用字符串而非枚举
+- **更新** `src/web/pipeline_runner.py`：`_broadcast()` 用 `status_str` 替代 `status.value`
+
+## 2026-06-26
+
+### 修复管线运行按钮 + i18n 错误
+- **更新** `frontend/src/components/workflow/WorkflowBuilder.tsx`：任务详情页从 taskStore 读取视频路径（只读），"运行管线"改为"继续运行"调用 resumeTask，创建新任务时保持原有逻辑
+- **更新** `frontend/src/components/layout/TopBar.tsx`：运行/停止按钮绑定 resumeTask/cancelTask，已完成/已取消/错误状态隐藏运行和停止按钮
+- **修复** `frontend/src/components/workflow/PipelineNode.tsx`：`workflow.status.*` 动态键无法解析，改用本地 STATUS_LABELS 查找表 + `useTranslations("workflow")` 命名空间
+- **修复** `frontend/i18n/request.ts`：`requestLocale` 可能是 Promise，需 await 后使用，避免 `[object Promise]` 作为 locale 传入
+- **修复** `src/clip_engine/scene_detector.py`：`_split_long_scenes` 当 group 只有单个 segment 且超过 max_scene_duration 时，没有 gap 可拆分导致 `IndexError: list index out of range`，增加空 gaps 检测直接保留原 group
+- **更新** `src/web/pipeline_runner.py`：异常日志记录完整 traceback 到任务日志，便于排查错误
+
+### 时间轴视频加载 + 场景片段回显
+- **更新** `frontend/src/components/timeline/TimelineEditor.tsx`：视频路径改为从 taskStore 响应式读取，修复挂载时任务未加载导致视频不显示的问题
+- **更新** `frontend/src/components/timeline/TimelineEditor.tsx`：时间轴在没有选中候选片段时，自动从场景数据加载片段显示（按时间排序）
+- **修复** `frontend/src/components/workflow/PipelineNode.tsx`：`workflow.status.*` 翻译键无法动态解析，改用全路径键名
+
+### 移除主画布控制台标签
+- **更新** `frontend/src/components/layout/MainCanvas.tsx`：移除 `console` 视图标签及 `RunConsole` 动态导入，只保留 Workflow / 场景 / 时间轴三个标签
+- **更新** `frontend/src/app/tasks/[id]/page.tsx`：不再向 MainCanvas 传递 `taskId` prop
+
+### 文件系统浏览 + 侧边栏 404 修复
+- **新增** `src/web/app.py`：`GET /api/fs/drives` — 列出可用驱动器（Windows 盘符 / Unix 根目录）
+- **新增** `src/web/app.py`：`GET /api/fs/list?path=...` — 列出目录内容，自动标记视频文件
+- **新增** `frontend/src/components/FileBrowser.tsx`：文件浏览器模态框组件
+  - 驱动器切换、面包屑导航、视频/全部过滤器
+  - 双击目录进入、双击文件选中
+- **更新** `frontend/src/app/page.tsx`："浏览"按钮集成文件浏览器，移除 `showOpenFilePicker` 旧代码
+- **修复** `frontend/src/components/layout/Sidebar.tsx`：移除指向不存在页面的链接（/projects、/presets、/pipelines、/runs），只保留 /tasks
+- **修复** `frontend/src/components/FileBrowser.tsx`：`fetchDrives` 获取驱动器后未设置 `items` 状态，导致表格始终显示"空目录"
+
+### 后端 i18n 国际化模块
+- **新增** `src/utils/i18n.py`：字典式后端国际化模块，支持 zh/en 翻译
+  - `_(key, locale, **params)` — 获取翻译字符串，支持参数格式化
+  - `get_stage_label(stage_id, locale)` / `get_stage_description(stage_id, locale)` — 阶段多语言名称/描述
+  - `resolve_locale(accept_language)` — 从 Accept-Language 头解析语言代码
+  - 涵盖应用生命周期、任务管理、阶段执行、管线日志、SSE 事件等翻译键
+- **更新** `src/web/app.py`：所有 API 端点引入 i18n
+  - HTTPException 错误消息国际化（任务不存在、阶段未执行、场景不存在等）
+  - 任务创建/删除/恢复/取消接口的返回消息国际化
+  - 评分维度、管线阶段配置接口返回多语言数据
+  - 应用生命周期和启动日志消息国际化
+- **更新** `src/web/pipeline_runner.py`：所有管线日志和进度消息国际化
+  - 转录、审核、分析、评分、筛选、规划、评审、剪辑各阶段日志
+  - SSE 阶段名称广播消息国际化
+  - 错误处理消息国际化
+- **更新** `src/web/stage_executor.py`：阶段执行器错误消息国际化
+  - 未知阶段、前置依赖缺失、无候选片段等 ValueError 消息
+
+### 前端 i18n 基础设施修复
+- **新增** `frontend/i18n/request.ts`：next-intl 请求配置文件（从 src/i18n/ 迁移至项目根目录）
+- **新增** `frontend/i18n/ClientProvider.tsx`：客户端国际化 Provider 组件
+- **新增** `frontend/routing.ts`：next-intl 路由配置（支持 zh/en 语言，无路由前缀）
+- **更新** `frontend/next.config.ts`：注册 next-intl 插件（createNextIntlPlugin）
+- **更新** `frontend/src/app/layout.tsx`：包裹 ClientProvider 以支持客户端 useTranslations hook
+- **更新** `frontend/src/i18n/request.ts` → 删除（路径重复，合并至 frontend/i18n/request.ts）
+
+### 剩余前端组件 i18n 国际化迁移
+- **更新** `frontend/src/components/workflow/PipelineNode.tsx`：引入 `useTranslations("workflow")`，将 Enable/Disable 按钮标题和状态标签（pending/running/completed/failed/skipped）替换为 i18n 翻译键
+- **更新** `frontend/src/lib/sceneUtils.ts`：新增 `getScoreDimLabel(key, locale)` 函数，支持中英文评分维度标签切换；保留 `SCORE_DIMENSION_LABELS_MAP` 向后兼容
+- **更新** `frontend/src/types/workflow.ts`：新增 `EN_BASE_STAGE_SCHEMAS` 和 `EN_STAGE_DESCRIPTIONS` 英文常量，以及 `getStageSchemas(locale)` 和 `getStageDescriptions(locale)` 辅助函数
+- **更新** `frontend/src/i18n/request.ts`：修复消息文件导入路径（`../../messages/` → `../../../messages/`）
+- **更新** `messages/zh.json` 和 `messages/en.json`：新增 `workflow.status` 命名空间（pending/running/completed/failed/skipped 状态标签）
+
+### Timeline 组件 i18n 国际化迁移
+- **更新** `frontend/src/components/timeline/TimelineToolbar.tsx`：引入 `useTranslations("timeline")`，将硬编码英文字符串替换为 i18n 翻译键（play、pause、zoomIn、zoomOut、snapOn/snapOff、timelineDuration、empty、deleteClip、clearAll、exportClips、exporting、export）
+- **更新** `frontend/src/components/timeline/VideoPreview.tsx`：引入 `useTranslations("timeline")`，替换 noVideo、noVideoHint、play、pause、mute、unmute 字符串
+- **更新** `frontend/src/components/timeline/TimelineCanvas.tsx`：引入 `useTranslations("timeline")`，替换 noClips 空状态文本
+- **更新** `frontend/src/components/timeline/ClipRenderer.tsx`：引入 `useTranslations("timeline")`，替换 clipLabel 和 scorePrefix 文本
+- **更新** `frontend/src/components/timeline/ThumbnailPreview.tsx`：引入 `useTranslations("timeline")`，替换 frameAt 图片 alt 属性
 
 ## 2026-06-23
 
@@ -198,58 +190,43 @@
 - **重写** `src/batch/__init__.py`：基于 `process_video()` 实现批处理
   - `discover_videos()` — 支持文件/目录递归/glob 模式发现视频
   - `run_batch()` — 串行调用 `process_video()`，生成 CSV 汇总报告
-  - `BatchResult` — 批量处理结果聚合，包含 success_count/fai
-### Smart Clip Engine v2.0 增强（4.7-4.10 实现）
-- **新增** `src/clip_engine/planner.py`：Duration Planner（目标时长组合规划）
-  - DurationPlanner: 根据目标时长智能组合片段
-  - 预定义模板：60s（3高潮）、90s（4-5片段）、180s（5高潮+2过渡+1结尾）、300s
-  - 动态模板生成：根据任意目标时长自动生成槽位
-  - 槽位角色系统：hook/climax/transition/ending，按优先级分配
-  - plan_duration() 便捷函数
-- **新增** `src/clip_engine/weights.json`：预设权重配置文件
-  - 内置预设权重（douyin/youtube/bilibili/viral/all）
-  - 内置剪辑模式权重（comedy/action/emotion/dialogue/knowledge/hook/viral/all）
-  - 支持 ~/.videoagent/weights.json 用户自定义覆盖
-- **新增** `src/clip_engine/reviewer.py`：LLM Final Review（二阶段筛选）
-  - FinalReviewer: 对规则引擎筛选后的候选做 LLM 最终精选和重排序
-  - ReviewResult/ReviewSelection 结果模型
-  - final_review() 便捷函数
-- **新增** `prompts/final_review.md`：LLM Final Review 独立 prompt 文件
-  - 精选标准：独立性、吸引力、多样性、节奏感、平台适配
-  - 排序原则：Hook 前置、节奏递进、类型交替、留白
-  - 角色定义：hook/buildup/climax/transition/ending
-- **更新** `src/clip_engine/scorer.py`：
-  - 权重从 JSON 文件加载（替代硬编码常量）
-  - 新增 reload_weights() — 运行时刷新权重缓存
-  - 新增 PresetWeights.from_json_file() — 从外部 JSON 加载自定义权重
-  - ScoreEngine 新增 weight_file 参数
-  - 新增 list_presets() / show_preset() / ClipMode.list_available() 便捷函数
-- **更新** `src/analyze/llm_analyzer.py`：
-  - 新增 _final_review_prompt 加载
-  - 新增 _default_final_review_prompt() 默认 prompt
-  - 新增 _build_candidates_text() — 构建候选片段文本
-  - 新增 _parse_final_review_response() — 解析 Final Review 响应
-  - 新增 final_review() — LLM 二阶段筛选方法
-  - 改进 analyze_scenes() 中的用户 prompt 注入逻辑（从 system prompt 改为 user prompt 末尾追加）
+  - `BatchResult` — 批量处理结果聚合，包含 success_count/fail_count 等统计
+- **更新** `src/main.py`：新增 `batch` CLI 命令
+  - `videoagent batch <input>` — 支持文件/目录/glob 输入
+  - `--clip` / `--min-score` / `--merge` / `--transition` 参数
+- **更新** `ROADMAP.md`：
+  - 版本升至 v0.2.0
+  - "已完成" 增加全流程接口和批量处理模块
+  - "批量处理模式" 标记为已完成，保留并发控制等待增强项
+- **更新** `README.md`：
+  - 新增批量处理使用说明（CLI + Python API）
+  - 更新项目结构（增加 pipeline.py 和 batch/ 模块）
+  - 剪辑功能状态从"开发中"改为已完成
+- **更新** `ARCHITECTURE.md`：
+  - 项目结构增加 pipeline.py、batch/、logs/ 目录
+  - CLI 命令增加 clip 和 batch
+  - 实施路线图更新 Phase 1-3.5 为已完成
+
+### ffmpeg 剪辑模块实现
+- **新增** `src/edit/clipper.py`：完整的 ffmpeg 剪辑引擎
+  - `clips_from_report()` — 从报告 JSON 一键提取亮点片段（主入口）
+  - `extract_segment()` — 单个片段裁剪
+  - `clip_highlights()` — 批量裁剪独立片段
+  - `merge_clips()` — 拼接精华视频（支持交叉淡入淡出转场 / concat 直拼）
+  - 输出 MP4 (H.264 + AAC)，CRF 23 质量
+- **新增** `ClipResult` / `ClipBatchResult` 数据类
+- **更新** `src/edit/__init__.py`：导出新数据类
+- **更新** `src/utils/io.py`：
+  - 新增 `load_analysis_json()` — 从 JSON 加载分析报告
+  - `export_analysis_json()` 增加 `video_path` 持久化
 - **更新** `src/main.py`：
-  - _run_smart_clip() 集成 Duration Planner 和 LLM Final Review
-  - 新增 --duration-planner CLI 参数（启用 Duration Planner）
-  - 新增 --final-review CLI 参数（启用 LLM Final Review）
-  - 新增 --final-review-count CLI 参数（Final Review 精选数量）
-  - clip 和 pipeline 命令均支持新参数
-- **更新** `src/clip_engine/__init__.py`：更新模块文档
-to_srt()` — 完整 SRT 字幕文本
-  - `TranscriptResult.export_json()` / `export_srt()` — 文件导出
-  - `TranscriptResult.from_dict()` / `from_json()` — 反序列化
-  - `_seconds_to_srt_time()` 使用 round() 修复浮点毫秒精度问题
-- **新增** `tests/test_models.py`：3.4 输出格式单元测试（24 个测试）
-  - Segment 序列化/反序列化往返一致性
-  - SRT 格式验证（含毫秒精度、小时级时间戳）
-  - JSON 导出/导入往返一致性
-  - 文件导出创建父目录
-  - from_whisper_result 兼容新方法
-- **新增** `tests/test_whisper_engine_params.py`：3.5 参数验证测试（13 个测试）
-  - beam_size、temperature_fallback 默认值和自定义
-  - 分段转录参数（chunk_duration、overlap、similarity_threshold 等）
-  - config.yaml 配置值与 WhisperEngine 默认值一致性验证
-- **注意**：单元测试全部通过（71 tests），真实视频端到端验证需要在有 GPU 的环境中运行
+  - 新增 `clip` 子命令（`--video`, `--merge/--no-merge`, `--transition`, `--min-score`）
+  - `pipeline` 命令增加 `--clip` 和 `--min-score` 参数
+  - `analyze` 命令增加 `--video` 参数（记录源视频路径到报告）
+
+### 项目规划文档
+- **新增** `ROADMAP.md`：完整实施路线图
+  - 近期目标：批量处理、剪辑后处理、长视频分段转录
+  - 中期目标：智能片段筛选、多语言混合支持
+  - 远期目标：FastAPI 服务化、可视化界面（NiceGUI → Tauri）
+  - Viral Engine v2.0 规划：注意力扫描、故事模板、Viral Score、渲染增强

@@ -192,6 +192,11 @@ class WhisperSegmentDetector(SceneDetector):
                 gap = group[j].start - group[j - 1].end
                 gaps.append((gap, j))
 
+            # No gaps to split on (single segment or contiguous) — keep as-is
+            if not gaps:
+                result.append(group)
+                continue
+
             # 按 gap 大小降序排序
             gaps.sort(reverse=True)
 

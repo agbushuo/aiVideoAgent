@@ -46,32 +46,32 @@
 
 严格 JSON 格式，不要 markdown 代码块标记：
 
-{
+{{
   "selected": [
-    {
+    {{
       "scene_id": 15,
       "role": "hook",
       "reason": "开头的高能场面能立即抓住观众注意力"
-    },
-    {
+    }},
+    {{
       "scene_id": 8,
       "role": "buildup",
       "reason": "承接开头的紧张感，展开剧情"
-    },
-    {
+    }},
+    {{
       "scene_id": 22,
       "role": "climax",
       "reason": "全片最高潮，情绪达到顶点"
-    }
+    }}
   ],
   "rejected": [
-    {
+    {{
       "scene_id": 3,
       "reason": "与 scene_id=15 类型过于相似，保留分数更高的 15"
-    }
+    }}
   ],
   "overall_comment": "整体选择了 3 个片段，覆盖了搞笑、冲突、反转三种类型，节奏从轻松到紧张再到反转，适合抖音平台的快节奏风格。"
-}
+}}
 
 ## 角色定义（role）
 
