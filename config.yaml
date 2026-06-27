@@ -32,7 +32,7 @@ whisper:
 
 llm:
   # LLM 提供商: llama_cpp / openai / ollama
-  provider: "llama_cpp"
+  provider: "openai"
   # 模型名称
   model: "Qwen3.6-27B-Q4_K_M.gguf"
   # API 端点 (llama.cpp 默认 8080)

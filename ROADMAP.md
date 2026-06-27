@@ -1,61 +1,222 @@
 # VideoAgent 实施路线图
 
-> 最后更新: 2026-06-25  
-> 当前版本: v0.4.0 (Smart Clip Engine v2.0 4.1-4.10 已完成)
+> 最后更新: 2026-06-26
+> 当前版本: v1.1.0 (Phase 8 NiceGUI 已移除)
 
 ---
 
 ## 已完成
 
-- [x] **Phase 1**: Whisper 转录模块（`src/transcribe/`）
-- [x] **Phase 2**: LLM 分析引擎（`src/analyze/`）
-- [x] **Phase 3**: ffmpeg 剪辑模块（`src/edit/clipper.py`）
-  - 单个片段裁剪
-  - 批量提取独立片段文件
-  - 拼接精华视频（交叉淡入淡出转场）
-  - 从报告 JSON 一键提取（`clips_from_report()`）
-- [x] CLI 入口（`src/main.py`）：`transcribe` / `analyze` / `clip` / `pipeline`
-- [x] **单视频全流程接口**（`src/pipeline.py`）
-  - `process_video()` — 封装 转录→分析→(可选)剪辑 完整管线
-  - 每次调用独立创建和释放资源，返回 `VideoProcessResult`
-  - 所有配置参数可覆盖（`whisper_*`、`llm_*`、`ffmpeg_*`）
-- [x] **批量处理模块**（`src/batch/`）
-  - `run_batch()` — 串行调用 `process_video()`，每个视频完全独立运行
-  - `discover_videos()` — 支持文件/目录递归/glob 模式
-  - CSV 汇总报告输出
-  - CLI `batch` 命令
-- [x] **长视频分段转录策略**（`src/transcribe/merger.py` + `src/utils/audio_preprocess.py`，2026-06-24 验证）
-  - 音频预处理：FFmpeg 提取 16kHz mono WAV，可选 loudness normalize
-  - 音频粗切 + overlap：15min/chunk，10s overlap，自动检测时长阈值
-  - Segment 级去重合并：Levenshtein 相似度 > 0.8 去重，整段保留/丢弃
-  - Whisper 参数优化：beam_size=5，temperature fallback
-  - 统一输出层：TranscriptResult 接口对上层透明
-  - 真实验证：140 分钟电影全流程（10 chunks，7171 segments，6 个亮点）
-- [x] **Smart Clip Engine v2.0 MVP**（`src/clip_engine/`，2026-06-25 完成）
-  - 四层架构实现（AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化）
-  - Scene Detection（Whisper segment 分组 MVP + OpenCV 预留接口）
-  - LLM Scene 标注（多维评分 + 标签 + 摘要，支持分段调用）
-  - Score Engine（preset 权重: douyin/youtube/bilibili/viral/all + clip mode）
-  - Filter Engine（Diversity 去重、数量/时长约束）
-  - CLI 集成（--smart-clip, --mode, --preset, --clips, --duration, --prompt）
-  - 十个功能模块详细设计
-  - Scene Detection 接口（Whisper segment MVP + OpenCV 预留）
-  - 多维评分 + preset 权重系统
-  - 实施顺序和 MVP 路径明确
+- [x] **Phase 1**: Whisper 转录模块 (`src/transcribe/`)
+- [x] **Phase 2**: LLM 分析引擎 (`src/analyze/`)
+- [x] **Phase 3**: ffmpeg 剪辑模块 (`src/edit/clipper.py`)
+- [x] **Phase 3.5**: 长视频分段转录策略（音频预处理 + chunk + segment 去重，140min 电影验证通过）
+- [x] **Phase 4**: Smart Clip Engine v2.0（四层架构：Scene Detection → LLM 标注 → Score/Filter → Clipper）
+- [x] **Phase 4**: Scene Explorer（场景表格 + 筛选 + 排序 + 搜索 + 行内编辑）
+- [x] **Phase 4.5**: 场景工具函数库（时间格式化、分数颜色、类型徽章等）
+- [x] **Phase 5**: Web 控制台 v1（NiceGUI + FastAPI + TaskManager + CLI `serve` 命令）
+- [x] **Phase 5.5**: 后端 API 扩展（阶段级执行、SSE 事件流、20+ REST 端点）
+- [x] **Phase 2 (Web UI)**: Next.js 脚手架 + App Shell（Dashboard、任务列表、工作区、Zustand 状态管理）
+- [x] **Phase 3 (Web UI)**: Workflow Builder — React Flow DAG 画布、自定义节点、ConfigPanel、运行管线
+- [x] **Phase 5 (Web UI)**: Timeline Editor — Konva.js 时间轴、clip 拖拽/缩放、播放头、视频预览、导出
+- [x] **Phase 6 (Web UI)**: Run Console — SSE 实时日志、阶段状态面板、重试按钮、历史日志恢复
+- [x] **Phase 7 (Web UI)**: 集成测试 — 41 个 API 自动化测试全部通过、前端功能验证、管线执行器解耦
+- [x] **Phase 8 (Web UI)**: 替换 NiceGUI — 删除旧代码、移除依赖、清理引用
+- [x] 批量处理模块：`run_batch()` + glob 模式 + CSV 汇总报告
+
+---
+
+## 进行中
+
+### Web UI 现代化：Next.js + React Flow 前端架构
+
+> 目标：从 NiceGUI 迁移到 Workflow-first + Timeline-first 的混合编辑器
+> 技术栈：Next.js 14 (App Router) + TypeScript + TailwindCSS + Zustand + React Flow + Konva.js
+> 启动日期: 2026-06-25
+
+**架构设计：**
+```
+VideoAgent Web
+├── App Shell（布局层）
+│   ├── TopBar: Project / Run / Save
+│   ├── Sidebar: Projects / Presets / Pipelines / Runs
+│   └── Main Canvas: 三视图切换
+│
+├── Workflow Builder（流程编排）     ← React Flow DAG
+├── Pipeline Config Panel（参数面板） ← Schema 驱动表单
+├── Scene Explorer（AI 分析结果）   ← 场景表格 + 筛选
+├── Timeline Editor（剪辑可视化）   ← Konva.js 时间轴
+└── Run Console（任务执行）         ← CI/CD 风格日志
+```
+
+**三视图系统：**
+1. **Workflow 视图** — DAG 可视化管线编排（React Flow），拖拽排序、阶段开关、参数编辑
+2. **Scene 视图** — AI 理解结果中心，tag 筛选、score 排序、搜索、选中添加到时间轴
+3. **Timeline 视图** — 剪辑可视化编辑器（Konva.js），clip 拖拽/缩放/合并/删除
+
+**实施阶段：**
+
+| 阶段 | 内容 | 状态 | 依赖 |
+|------|------|------|------|
+| **Phase 1** | 后端 API 扩展（阶段级执行、SSE、20+ 端点） | 🟡 进行中 | 无 |
+| **Phase 2** | Next.js 脚手架 + App Shell | ✅ 已完成 | Phase 1 |
+| **Phase 3** | Workflow Builder（React Flow DAG） | ✅ 已完成 | Phase 2 |
+| **Phase 4** | Scene Explorer（场景表格） | ✅ 已完成 | Phase 2 |
+| **Phase 5** | Timeline Editor（Konva.js 时间轴） | ✅ 已完成 | Phase 4 |
+| **Phase 6** | Run Console（SSE 实时日志） | ✅ 已完成 | Phase 1 |
+| **Phase 7** | 集成测试 | ✅ 已完成 | 以上全部 |
+| **Phase 8** | 替换 NiceGUI（删除旧代码） | ✅ 已完成 | Phase 7 |
+
+**Phase 1 详细（后端 API 扩展）：**
+
+| 步骤 | 内容 | 状态 | 文件 |
+|------|------|------|------|
+| 1.1 | Pydantic API 模型（TaskCreate, StageResult, SceneResponse 等） | ✅ 已完成 | `src/web/api_schemas.py` |
+| 1.2 | SSE 事件流系统（广播、过滤、keepalive） | ✅ 已完成 | `src/web/sse.py` |
+| 1.3 | 阶段调度器（8 个阶段映射到 pipeline 函数） | ✅ 已完成 | `src/web/stage_executor.py` |
+| 1.4 | TaskManager 扩展（PipelineStageConfig, StageResult, run_stage） | ✅ 已完成 | `src/web/task_manager.py` |
+| 1.5 | REST API 端点（34 个路由：任务 CRUD、阶段执行、Scene/Candidate、配置、SSE） | ✅ 已完成 | `src/web/app.py` |
+
+**Phase 3 详细（Workflow Builder）：**
+
+| 步骤 | 内容 | 状态 | 文件 |
+|------|------|------|------|
+| 3.1 | 表单字段类型 + 阶段 schema 映射 | ✅ 已完成 | `frontend/src/types/workflow.ts` |
+| 3.2 | React Flow 暗色主题 CSS | ✅ 已完成 | `frontend/src/styles/reactflow-overrides.css` |
+| 3.3 | 自定义 PipelineNode（图标、toggle、状态） | ✅ 已完成 | `frontend/src/components/workflow/PipelineNode.tsx` |
+| 3.4 | 可复用表单字段 StageFormField | ✅ 已完成 | `frontend/src/components/workflow/StageFormField.tsx` |
+| 3.5 | schema 驱动 ConfigPanel | ✅ 已完成 | `frontend/src/components/workflow/ConfigPanel.tsx` |
+| 3.6 | React Flow 画布 + store 同步 | ✅ 已完成 | `frontend/src/components/workflow/ReactFlowCanvas.tsx` |
+| 3.7 | 根组件 WorkflowBuilder + 运行管线 | ✅ 已完成 | `frontend/src/components/workflow/WorkflowBuilder.tsx` |
+
+**Workflow Builder 功能：**
+- React Flow DAG 画布：8 个阶段节点分层排列（转录→场景检测→LLM 标注→评分→筛选→时长规划/最终评审→剪辑）
+- 自定义 PipelineNode：lucide 图标、toggle 开关、状态指示灯（等待/运行中/已完成/失败/已跳过）
+- ConfigPanel：schema 驱动参数表单（select/number/slider/textarea/checkbox），动态加载 preset 和 clipMode 选项
+- 运行管线：视频路径输入 + 语言选择 → POST /api/tasks，自动收集所有节点配置
+- 暗色主题，品牌色一致
+
+**Phase 4 详细（Scene Explorer）：**
+
+| 步骤 | 内容 | 状态 | 文件 |
+|------|------|------|------|
+| 4.1 | 场景工具函数（formatTime, getMaxScore, getScoreColor 等） | ✅ 已完成 | `frontend/src/lib/sceneUtils.ts` |
+| 4.2 | sceneStore 扩展（编辑状态、updateScene） | ✅ 已完成 | `frontend/src/stores/sceneStore.ts` |
+| 4.3 | 筛选工具栏（搜索、tag 芯片、minScore、排序） | ✅ 已完成 | `frontend/src/components/scenes/SceneFiltersBar.tsx` |
+| 4.4 | TanStack Table 场景表格（8 列） | ✅ 已完成 | `frontend/src/components/scenes/SceneTable.tsx` |
+| 4.5 | 场景编辑弹窗（scene_type/tags/summary/8 分数） | ✅ 已完成 | `frontend/src/components/scenes/SceneEditModal.tsx` |
+| 4.6 | 空状态组件 | ✅ 已完成 | `frontend/src/components/scenes/EmptyState.tsx` |
+| 4.7 | 主编排组件 + MainCanvas 集成 | ✅ 已完成 | `frontend/src/components/scenes/SceneExplorer.tsx` |
+
+**Scene Explorer 功能：**
+- TanStack Table 场景表格：8 列（复选框、ID、时间、类型、标签、摘要、最高分进度条、编辑）
+- 筛选工具栏：搜索框（300ms 防抖）、tag 多选芯片、最低分输入、排序下拉（最高分/时间升降序）
+- 场景编辑弹窗：scene_type 下拉、tags 逗号分隔输入、summary 文本域、8 个评分维度（0-10 分）
+- 勾选管理：单行复选框、全选、选中计数提示条
+- 类型颜色徽章：10+ 种场景类型各有专属颜色
+- 空状态提示：区分"无数据"和"无匹配"两种状态
+
+**Phase 5 详细（Timeline Editor）：**
+
+| 步骤 | 内容 | 状态 | 文件 |
+|------|------|------|------|
+| 5.1 | Timeline 类型定义 + 布局常量 | ✅ 已完成 | `frontend/src/types/timeline.ts` |
+| 5.2 | Konva 画布核心（时间标尺、Clip 渲染、拖拽缩放） | ✅ 已完成 | `frontend/src/components/timeline/TimelineCanvas.tsx`, `TimeRuler.tsx`, `ClipRenderer.tsx` |
+| 5.3 | Playhead 播放头 + store 增强 | ✅ 已完成 | `frontend/src/components/timeline/Playhead.tsx`, `frontend/src/stores/timelineStore.ts` |
+| 5.4 | 视频预览窗口 + 缩略图浮窗 | ✅ 已完成 | `frontend/src/components/timeline/VideoPreview.tsx`, `ThumbnailPreview.tsx` |
+| 5.5 | Timeline 工具栏 | ✅ 已完成 | `frontend/src/components/timeline/TimelineToolbar.tsx` |
+| 5.6 | 主编排组件（数据加载、导出、SSE） | ✅ 已完成 | `frontend/src/components/timeline/TimelineEditor.tsx` |
+| 5.7 | 集成到 MainCanvas | ✅ 已完成 | `frontend/src/components/layout/MainCanvas.tsx` |
+
+**Timeline Editor 功能：**
+- Konva.js 时间轴画布：时间标尺（自适应刻度密度）、单轨道、clip 矩形按场景类型着色
+- Clip 交互：水平拖拽移动、左右缩放手柄调整起止时间、0.5 秒网格吸附、选中高亮
+- Playhead 播放头：红色竖线贯穿轨道，可拖拽移动，requestAnimationFrame 驱动播放动画
+- 视频预览窗口：源视频播放，与 playhead 双向同步，音量控制
+- 缩略图浮窗：鼠标悬浮时间轴时显示对应帧的缩略图（200ms 防抖）
+- 工具栏：播放/暂停、缩放（+/-）、吸附开关、删除 clip、清空、导出
+- 数据加载：从 `/api/tasks/{id}/candidates` 加载已选中候选，自动铺满时间轴
+- 导出：收集时间轴 clips → `POST /api/tasks/{id}/stages/clipping/run` 触发 FFmpeg 剪辑
+- SSE 监听：任务完成时自动刷新 candidates
+
+**Phase 6 详细（Run Console）：**
+
+| 步骤 | 内容 | 状态 | 文件 |
+|------|------|------|------|
+| 6.1 | taskStore 扩展（consoleLogs、SSE 日志处理） | ✅ 已完成 | `frontend/src/stores/taskStore.ts` |
+| 6.2 | 阶段状态面板（状态卡片、Retry 按钮） | ✅ 已完成 | `frontend/src/components/console/StageStatusPanel.tsx` |
+| 6.3 | CI/CD 风格日志面板（级别颜色、自动滚动） | ✅ 已完成 | `frontend/src/components/console/LogPanel.tsx` |
+| 6.4 | 主编排组件（左右分栏、SSE 连接、历史加载） | ✅ 已完成 | `frontend/src/components/console/RunConsole.tsx` |
+| 6.5 | 集成到 MainCanvas（Console tab） | ✅ 已完成 | `frontend/src/components/layout/MainCanvas.tsx` |
+
+**Run Console 功能：**
+- 左右分栏布局：左侧 320px 阶段状态面板 + 右侧自适应日志面板
+- 阶段状态面板：8 个 pipeline 阶段卡片，状态图标（pending/running/completed/failed/skipped）、耗时、错误信息
+- Retry 按钮：失败阶段一键重试，调用 `POST /api/tasks/{id}/rerun-stage`
+- CI/CD 风格日志：等宽字体、时间戳、级别徽章（info/success/warning/error）、阶段标签
+- 自动滚动：新日志自动滚到底部，手动上滚暂停，滚回底部恢复
+- 历史日志：mount 时从 `GET /api/tasks/{id}` 加载，刷新页面后可恢复
+- SSE 实时推送：log/stage_start/stage_complete/error 事件自动追加到日志面板
+- 状态栏：运行状态指示器 + SSE 连接状态 + 进度百分比
+
+**新增 API 端点：**
+
+任务管理：
+- `POST /api/tasks` — 创建任务（含 pipeline_config）
+- `DELETE /api/tasks/{id}` — 删除任务
+- `POST /api/tasks/{id}/rerun-stage` — 重跑指定阶段
+
+阶段级执行：
+- `POST /api/tasks/{id}/stages/{stage}/run` — 执行单个阶段
+- `GET /api/tasks/{id}/stages` — 查询所有阶段状态
+- `GET /api/tasks/{id}/stages/{stage}` — 查询阶段详情
+
+Scene / Candidate：
+- `GET /api/tasks/{id}/scenes` — 场景列表（支持 tag/score/search 筛选）
+- `GET /api/tasks/{id}/scenes/{id}` — 单个场景
+- `PUT /api/tasks/{id}/scenes/{id}` — 手动修改标签/评分
+- `GET /api/tasks/{id}/candidates` — 候选列表
+- `PATCH /api/tasks/{id}/candidates/bulk-select` — 批量选中
+
+字幕：
+- `GET /api/tasks/{id}/transcript` — 获取字幕
+- `PUT /api/tasks/{id}/transcript` — 保存修改
+- `PUT /api/tasks/{id}/transcript/segments/{idx}` — 更新单个片段
+
+配置参考数据：
+- `GET /api/config/presets` — 预设权重
+- `GET /api/config/clip-modes` — 剪辑模式
+- `GET /api/config/scene-types` — 场景类型
+- `GET /api/config/score-dimensions` — 评分维度
+- `GET /api/config/pipeline-stages` — DAG 定义
+- `GET /api/config/weights` — 完整权重配置
+- `GET /api/config/duration-templates` — 时长模板
+
+实时推送：
+- `GET /api/events` — SSE 事件流
+- `GET /api/tasks/{id}/events` — 特定任务 SSE 流
 
 ---
 
 ## 近期目标（提升现有管线质量）
 
-### 1. 批量处理模式 ✅ 已完成
+### 剪辑后处理增强
 
-> 已实现：`src/pipeline.py` + `src/batch/__init__.py` + CLI `batch` 命令
+当前剪辑功能已可用，进一步增强输出质量。
 
-**已实现功能：**
-- [x] `videoagent batch "D:/videos/*.mp4"` 批量处理目录
-- [x] 支持 glob 模式和目录递归
-- [x] 串行处理，每个视频完全独立运行（`process_video()` 接口）
-- [x] 生成批量汇总报告（CSV），包含所有视频的处理结果
+**功能设计：**
+- **字幕叠加**：在剪辑片段上自动烧录 SRT 字幕（`-vf subtitles=xxx.srt`）
+- **封面/缩略图生成**：每个片段自动截取关键帧（中间帧）作为封面图
+- **元数据嵌入**：将标题、评分、描述写入 MP4 元数据
+- **章节标记**：拼接视频中每个片段起始处添加 chapter marker
+
+**涉及文件：** `src/edit/clipper.py`（新增后处理方法）
+
+---
+
+### 批量处理增强
+
+**已实现：** `run_batch()` + glob 模式 + CSV 汇总报告
 
 **待增强：**
 - [ ] 并发控制：`--workers N` 同时处理 N 个视频（避免 GPU OOM）
@@ -63,509 +224,24 @@
 
 ---
 
-### 2. 剪辑后处理增强
+### 管线断点续跑（跳过已有转录）
 
-当前剪辑功能已可用，进一步增强输出质量。
+> 背景：管线在转录后阶段（Scene Detection）因 bug 失败，修复后重新跑管线需要重新转录（~42min）。需要支持加载已有转录文件，从分析阶段继续。
 
 **功能设计：**
-- **字幕叠加**：在剪辑片段上自动烧录 SRT 字幕（`-vf subtitles=xxx.srt`）
-- **封面/缩略图生成**：每个片段自动截取关键帧（中间帧）作为封面图
-- **元数据嵌入**：将标题、评分、描述写入 MP4 元数据（`-metadata title=xxx`）
-- **章节标记**：拼接视频中每个片段起始处添加 chapter marker
+- [x] `TaskCreateRequest` / `PipelineTask` 新增 `skip_existing_transcript: bool` 参数
+- [x] 管线 runner 在转录阶段前检查 `outputs/{video_stem}/subtitles/{video_stem}.json`
+- [x] 文件存在且启用跳过时，用 `TranscriptResult.from_json()` 加载，跳过 Whisper 引擎
+- [x] 字幕审核暂停点（review_enabled）保留不变
+- [x] 前端 WorkflowBuilder 添加"跳过已有转录"复选框
+- [x] 异常日志记录完整 traceback 到任务日志（已修复）
 
-**涉及文件：** `src/edit/clipper.py`（新增后处理方法）
-
----
-
-### 3. 长视频分段转录策略（Segment-aware 升级）✅ 已完成
-
-> 完成日期: 2026-06-24  
-> 已实现：`src/utils/audio_preprocess.py` + `src/transcribe/merger.py` + `src/transcribe/whisper_engine.py`  
-> 真实验证：140 分钟电影全流程测试通过（10 chunks，7171 segments，6 个亮点）
-
-Whisper 处理超长视频（>1 小时）时容易 OOM，需要分段策略。
-核心原则：**按 Whisper segment 边界对齐切分，而非固定时间切分**，避免句子断裂。
-
-#### 3.1 音频预处理（Step 0）✅ 已完成
-
-**涉及文件：** 新增 `src/utils/audio_preprocess.py`
-
-- FFmpeg 统一格式转换：16kHz mono WAV
-- 可选 loudness normalize（提升噪声视频质量）
-- 提取音频后释放原视频，减少内存占用
-
-```
-Video Input → FFmpeg extract → 16kHz mono WAV → Whisper Pipeline
-```
-
-#### 3.2 音频粗切 + 时间 Overlap（Step 1）✅ 已完成
-
-**涉及文件：** `src/transcribe/whisper_engine.py`（新增分段逻辑）
-
-- 按固定时长粗切音频（默认 15min/chunk）
-- 每个 chunk 前后添加时间 overlap（默认 10s），覆盖 3-5 个 Whisper segment
-- 自动检测音频时长，超过阈值时切换分段模式
-
-```
-Audio (60min)
-  → Chunk A: 0:00 - 15:00 (overlap: 0:00 - 0:10)
-  → Chunk B: 14:50 - 30:00 (overlap: 14:50 - 15:10)
-  → Chunk C: 29:50 - 45:00 (overlap: 29:50 - 30:10)
-  → Chunk D: 44:50 - 60:00 (overlap: 44:50 - 45:10)
-```
-
-#### 3.3 Whisper Segment 级去重合并（Step 2，核心）✅ 已完成
-
-**涉及文件：** 新增 `src/transcribe/merger.py`
-
-- 每个 chunk 转录后，给 segment 加上全局时间戳偏移
-- 所有 segment 按时间排序后，按 **segment 边界** 做去重（非按时间）
-- 相邻 segment 做文本相似度比对（Levenshtein / 前 N 字符模糊匹配）
-  - 相似度 > 0.8 → 判定为 overlap 重复，保留时间范围更广的那个
-  - 相似度 < 0.8 → 保留两者
-- **关键优势**：不会出现"半句话保留、半句话丢弃"的情况，总是整段保留或整段丢弃
-
-```
-Chunk A 输出 segment: [..., S2(14:20-14:35), S3(14:35-14:52)]
-Chunk B 输出 segment: [S1'(14:50-15:08), S2'(15:08-15:25), ...]
-
-合并去重逻辑：
-  S3.text vs S1'.text → similarity 0.92 → 判定重复 → 保留 S1'（全局时间更准）
-  最终: [..., S2(14:20-14:35), S1'(14:50-15:08), S2'(15:08-15:25), ...]
-```
-
-#### 3.4 统一合并输出层（Step 3）✅ 已实现
-
-**涉及文件：** `src/transcribe/merger.py` + `src/transcribe/models.py`（扩展）
-
-- 输出结构化 segment 列表（统一格式）
-- 分段结果对上层透明 — `TranscriptResult` 接口不变
-- 可选：LLM 标点修复后处理（后续做，见中期目标 5）
-
-#### 3.5 Whisper 执行策略优化 ✅ 已实现
-
-**涉及文件：** `src/transcribe/whisper_engine.py`
-
-- `beam_size >= 5`（提升边界准确率）
-- temperature fallback（首次 0，失败时 0.5）
-- 默认 `large-v3`，不引入 retry 策略（准确率已足够，retry 收益低）
-
-#### 3.6 不做 VAD 的理由（当前阶段）
-
-- 目标场景（游戏录播/直播）说话人不固定、背景音复杂，VAD 误判率高
-- Whisper 自身按句子输出 segment，segment-aware 方案已经解决边界问题
-- 如果后续发现边界问题多，再引入 `silero-vad` 作为可选预处理步骤
-
-#### 完整流水线
-
-```
-Video Input
-   ↓
-FFmpeg extract audio → 16kHz mono WAV
-   ↓
-Audio chunking (15min + 10s overlap)
-   ↓
-Whisper batch processing (per chunk)
-   ↓
-Global timestamp normalization
-   ↓
-Segment-level overlap deduplication  ← 核心升级
-   ↓
-Final TranscriptResult (transparent to upstream)
-   ↓
-LLM Analyze → Clip (unchanged)
-```
-
-#### 实施顺序
-
-| 步骤 | 内容 | 状态 | 依赖 |
-|------|------|------|------|
-| 3.1 | 音频预处理 | ✅ 已完成 | 无 |
-| 3.2 | 音频粗切 + overlap | ✅ 已完成 | 3.1 |
-| 3.3 | Segment 级去重合并 | ✅ 已完成 | 3.2 |
-| 3.4 | 统一输出层 | ✅ 已完成 | 3.3 |
-| 3.5 | Whisper 参数优化 | ✅ 已完成 | 无 |
-
-**真实验证（2026-06-24）：**
-- 140 分钟电影全流程测试：转录 10 chunks 共 7171 segments，LLM 提取 6 个亮点，剪辑 6 个片段 + 精华视频（3.1MB）
-- 两部电影批量串行处理：合并去重功能正常，时间戳排序正确，CSV 汇总报告生成正常
+**涉及文件：** `src/web/api_schemas.py`、`src/web/task_manager.py`、`src/web/pipeline_runner.py`、`frontend/src/components/workflow/WorkflowBuilder.tsx`
 
 ---
 
-## 中期目标（功能扩展）
+### 多语言混合视频支持
 
-### 4. Smart Clip Engine v2.0（智能片段筛选引擎）✅ MVP 已完成
-
-> 目标：从"LLM 一次性输出亮点"升级为"LLM 打标签 + 程序规则引擎 + 策略筛选"的多层架构  
-> 核心变化：LLM 不再输出"有哪些精彩片段"，而是输出每个 Scene 的结构化标签和多维评分；后续排序、去重、组合全部由程序逻辑处理  
-> 定位：Phase 4（功能增强阶段），替代原有模糊的"智能片段筛选"规划
-> 
-> **完成日期: 2026-06-25**  
-> **已完成: 4.1-4.10**（4.11 CLI 集成待端到端测试）  
-> **已实现功能:**
-> - [x] 4.1 数据结构升级（Scene, ClipCandidate 模型）
-> - [x] 4.2 Scene Detection（Whisper segment 分组 MVP + OpenCV 预留接口）
-> - [x] 4.3 LLM Scene 标注 prompt + 分段调用
-> - [x] 4.4 Score Engine（preset 权重计算: douyin/youtube/bilibili/viral/all）
-> - [x] 4.5 Filter Engine（Diversity 去重、数量/时长约束）
-> - [x] 4.6 Clip Mode + Clip Count（CLI: --mode, --preset, --clips, --duration, --prompt）
-> - [x] 4.7 Duration Planner（目标时长组合规划: 60s/90s/180s/300s 模板 + 动态生成）
-> - [x] 4.8 Category Weight（预设权重 JSON 持久化 + ~/.videoagent/ 用户自定义）
-> - [x] 4.9 用户自定义 Prompt（独立 final_review.md prompt + 改进注入逻辑）
-> - [x] 4.10 LLM Final Review（二阶段筛选, --final-review 参数触发）
->
-> **待实现:**
-> - [ ] 4.11 CLI 集成 + 端到端测试
-
----
-
-#### 4.1 整体架构
-
-```
-Whisper
-    │
-    ▼
-字幕 (Segment 列表)
-    │
-    ▼
-Scene Detection
-（场景切分 — 当前基于 Whisper segment 逻辑分组，预留 OpenCV 接口）
-    │
-    ▼
-LLM 分析（分阶段调用）
-（每个 Scene 输出标签 + 多维评分 + 简短摘要）
-    │
-    ▼
-Score Engine
-（程序评分 — 根据 preset 权重计算综合分）
-    │
-    ▼
-Filter Engine
-（去重合并、Diversity 最小间隔、时长约束、数量控制）
-    │
-    ▼
-Duration Planner
-（根据目标时长组合片段 — 如 60s ≈ 3 个高潮）
-    │
-    ▼
-LLM Final Review（可选）
-（从候选集中做最终精选和排序）
-    │
-    ▼
-Clipper（已有）
-（ffmpeg 裁剪 + 拼接）
-```
-
----
-
-#### 4.2 数据结构升级
-
-**当前 `Highlight`（单维度）：**
-```python
-@dataclass
-class Highlight:
-    segment_id: int
-    start: float
-    end: float
-    title: str
-    reason: str
-    score: float          # 单一评分 0-1
-```
-
-**升级后（多维度）：**
-```python
-@dataclass
-class Scene:
-    """场景 — 由多个 Whisper segment 逻辑分组而成"""
-    scene_id: int                  # 场景编号
-    start: float                   # 开始时间（秒）
-    end: float                     # 结束时间（秒）
-    segment_ids: list[int]         # 包含的 Whisper segment 索引
-    text: str                      # 场景完整文本
-
-    # LLM 标注结果
-    scene_type: str                # 类型: Dialogue / Comedy / Fight / Romance / Speech / Teaching / Transition / Music / B-roll
-    tags: list[str]                # 标签: [搞笑, 情绪爆发, 冲突, 高能]
-    summary: str                   # 场景简短描述（1-2 句话）
-
-    # 多维评分（0-10 分制）
-    multi_score: dict[str, float]  # {hook, emotion, comedy, action, information, suspense, climax, viral}
-
-@dataclass
-class ClipCandidate:
-    """剪辑候选 — 由 Scene 经规则引擎筛选后生成"""
-    scene: Scene
-    composite_score: float         # 根据 preset 权重计算的综合分
-    rank: int                      # 排序位置
-    selected: bool                 # 是否被最终选中
-```
-
----
-
-#### 4.3 功能模块设计
-
-##### 模块 1：Scene Detection（场景切分）
-
-**当前方案（MVP）：基于 Whisper segment 逻辑分组**
-- 将连续的 Whisper segment 按语义分组为 Scene
-- 分组规则：
-  - 时间间隔 > 阈值（默认 5 秒静音）→ 新 Scene
-  - 说话人变化（后续通过 VAD 或音频特征检测）
-  - 话题变化（LLM 判断）
-- 每个 Scene 包含多个 segment，形成独立的内容块
-
-**预留接口（未来升级）：**
-```python
-class SceneDetector(ABC):
-    """场景检测器抽象基类"""
-
-    @abstractmethod
-    def detect_scenes(
-        self,
-        segments: list[Segment],
-        video_path: str | None = None,  # OpenCV 方案需要视频文件
-    ) -> list[Scene]:
-        ...
-
-class WhisperSegmentDetector(SceneDetector):
-    """基于 Whisper segment 逻辑分组的检测器（MVP）"""
-    ...
-
-class OpenCVSceneDetector(SceneDetector):
-    """基于 OpenCV 帧差异的场景检测器（未来）"""
-    ...
-```
-
-##### 模块 2：LLM Scene 标注
-
-**LLM 输出格式（每个 Scene 独立输出）：**
-```json
-{
-  "scene_id": 15,
-  "scene_type": "Comedy",
-  "tags": ["搞笑", "情绪爆发", "冲突", "高能"],
-  "multi_score": {
-    "hook": 9.6,
-    "emotion": 8.8,
-    "comedy": 9.6,
-    "action": 1.2,
-    "information": 3.1,
-    "suspense": 4.0,
-    "climax": 7.5,
-    "viral": 9.1
-  },
-  "summary": "主角在这里遭遇了……（1-2 句话描述）"
-}
-```
-
-**LLM 调用策略：**
-- 复用现有分段转录策略：长视频按 chunk 分组，每个 chunk 内的 Scene 批量提交给 LLM
-- 避免单个 prompt 超过上下文窗口
-- 每个 chunk 独立调用，结果合并
-
-##### 模块 3：Clip Mode（切片模式）
-
-用户通过 `--mode` 指定剪辑类型：
-
-| 模式 | 说明 | 优先维度 |
-|------|------|----------|
-| `comedy` | 搞笑片段 | comedy 80%, humor 20% |
-| `action` | 打斗/动作片段 | action 70%, suspense 30% |
-| `emotion` | 情绪片段（哭、吵架、反转） | emotion 60%, climax 40% |
-| `dialogue` | 文戏/台词/名场面 | information 40%, dialogue 30%, hook 30% |
-| `knowledge` | 知识点/教学/干货 | information 80%, education 20% |
-| `hook` | 前三秒最吸引人的片段 | hook 90%, viral 10% |
-| `viral` | 综合爆款（AI 综合判断） | 见下方权重公式 |
-| `all` | 不限制类型，全量输出 | 按综合分排序 |
-
-`viral` 模式默认权重：
-```
-Hook:     30%
-Emotion:  25%
-Comedy:   20%
-Conflict: 15%
-Info:     10%
-```
-
-##### 模块 4：Clip Count（片段数量控制）
-
-```bash
---clips 5     # 输出 Top 5
---clips 20    # 输出 20 个素材
---clips 0     # 不限制数量（默认行为）
-```
-
-##### 模块 5：Duration Planner（成片时长规划）
-
-```bash
---duration 60s    # 目标 60 秒成片
---duration 180s   # 目标 3 分钟成片
-```
-
-AI 自动规划结构：
-- 60s → 约 3 个高潮片段（15s Hook + 20s 冲突 + 25s 结尾）
-- 180s → 约 5 个高潮 + 2 个过渡 + 1 个 Ending
-- 片段长度动态调整，不完全由内容决定（见模块 6）
-
-##### 模块 6：Dynamic Clip（动态片段长度）
-
-- 不以固定时长（如 30 秒）裁剪
-- 以 Scene 边界作为剪辑点
-- 片段长度由内容自然结束点决定（可能 18s / 43s / 91s）
-- Duration Planner 在组合时考虑总时长约束，但不截断单个 Scene
-
-##### 模块 7：Auto Diversity（自动去重）
-
-**问题：** AI 常输出时间相邻的多个片段（12:10, 12:20, 12:35, 12:48），实际属于同一段内容。
-
-**解决方案：**
-```python
-def diversify(
-    candidates: list[ClipCandidate],
-    min_gap: float = 120.0,    # 最小间隔（秒），默认 2 分钟
-) -> list[ClipCandidate]:
-    """同一时间区域内只保留最高分的片段"""
-    ...
-```
-
-- 按时间排序候选片段
-- 滑动窗口检测：与已选中片段距离 < min_gap 的，只保留最高分
-- 确保输出的片段分布在视频的不同区域
-
-##### 模块 8：Category Weight（平台预设权重）
-
-```bash
---preset douyin     # 抖音权重
---preset youtube    # YouTube 权重
---preset bilibili   # B 站权重
---preset custom     # 自定义权重（需配合 --weights）
-```
-
-预设权重表：
-
-| 维度 | douyin | youtube | bilibili |
-|------|--------|---------|----------|
-| Hook | 40% | 20% | 15% |
-| Emotion | 30% | 10% | 20% |
-| Conflict | 20% | 10% | 10% |
-| Information | 10% | 50% | 35% |
-| Comedy | 0% | 10% | 25% |
-| Story | 0% | 30% | 20% |
-
-权重配置可持久化为 JSON 文件，支持用户自定义。
-
-##### 模块 9：用户自定义 Prompt
-
-```bash
-videoagent clip movie.mp4 --prompt "切情侣吵架片段"
-videoagent clip movie.mp4 --prompt "切所有名场面"
-videoagent clip movie.mp4 --prompt "只切女性角色高光"
-```
-
-- 用户 prompt 注入到 LLM Scene 标注的 system prompt 中
-- LLM 根据 prompt 调整标签和评分倾向
-- 可与 `--mode` 叠加使用（prompt 优先级更高）
-
-##### 模块 10：二阶段筛选（核心流程）
-
-```
-Stage 1 — LLM Scene 标注：
-  所有 Scene → LLM 批量打标签 + 多维评分
-  （复用分段策略，长视频分批调用）
-
-Stage 2 — 程序规则引擎：
-  Score Engine → 根据 preset 计算综合分
-  Filter Engine → Diversity 去重 + 数量/时长约束
-  Duration Planner → 按目标时长组合
-
-Stage 3 — LLM Final Review（可选）：
-  候选列表（如 20 个）→ LLM 最终精选（如 5 个）+ 重排序
-  "以下是 20 个候选片段，请选出最适合短视频的 5 个并排序"
-```
-
----
-
-#### 4.4 CLI 命令设计
-
-```bash
-# 基础用法（兼容现有行为）
-videoagent clip report.json --video input.mp4
-
-# 新模式：按类型筛选
-videoagent clip report.json --video input.mp4 --mode comedy --clips 5
-videoagent clip report.json --video input.mp4 --mode action
-videoagent clip report.json --video input.mp4 --mode emotion
-
-# 平台预设
-videoagent clip report.json --video input.mp4 --preset douyin --clips 10
-videoagent clip report.json --video input.mp4 --preset bilibili
-
-# 时长约束
-videoagent clip report.json --video input.mp4 --duration 60s --mode viral
-videoagent clip report.json --video input.mp4 --duration 180s --preset youtube
-
-# 自定义 prompt
-videoagent clip report.json --video input.mp4 --prompt "切情侣吵架片段"
-videoagent clip report.json --video input.mp4 --prompt "只切名场面"
-
-# 组合使用
-videoagent clip report.json --video input.mp4 \
-    --mode viral --preset douyin --clips 10 --duration 180s
-
-# pipeline 全流程（增强）
-videoagent pipeline input.mp4 --clip --mode comedy --clips 5 --preset douyin
-```
-
----
-
-#### 4.5 涉及文件
-
-```
-src/
- ├── clip_engine/              # 新增：智能片段筛选引擎
- │    ├── __init__.py
- │    ├── scene_detector.py    # Scene Detection（Whisper segment 分组 + OpenCV 接口）
- │    ├── scorer.py            # Score Engine（多维评分 + preset 权重计算）
- │    ├── filter.py            # Filter Engine（Diversity 去重、数量/时长约束）
- │    ├── planner.py           # Duration Planner（目标时长组合规划）
- │    └── models.py            # Scene, ClipCandidate 数据模型
- │
- ├── analyze/
- │    └── llm_analyzer.py      # 更新：新增 scene_analysis() 方法
- │
- └── main.py                   # 更新：clip 命令增加 --mode, --preset, --clips, --duration, --prompt
-```
-
----
-
-#### 4.6 实施顺序
-
-| 步骤 | 内容 | 预估时间 | 依赖 |
-|------|------|----------|------|
-| **4.1** | 数据结构升级（Scene, ClipCandidate 模型） | 半天 | 无 |
-| **4.2** | Scene Detection（Whisper segment 分组 MVP） | 1 天 | 4.1 |
-| **4.3** | LLM Scene 标注 prompt + 分段调用 | 1 天 | 4.1, 4.2 |
-| **4.4** | Score Engine（preset 权重计算） | 半天 | 4.1 |
-| **4.5** | Filter Engine（Diversity 去重） | 半天 | 4.4 |
-| **4.6** | Clip Mode + Clip Count（CLI 参数） | 半天 | 4.4, 4.5 |
-| **4.7** | Duration Planner | 1 天 | 4.5 |
-| **4.8** | Category Weight（预设权重配置） | 半天 | 4.4 |
-| **4.9** | 用户自定义 Prompt | 半天 | 4.3 |
-| **4.10** | LLM Final Review（二阶段筛选） | 1 天 | 4.3, 4.5 |
-| **4.11** | CLI 集成 + 端到端测试 | 1 天 | 以上全部 |
-
-**优先实现（MVP）：4.1 → 4.2 → 4.3 → 4.4 → 4.5 → 4.6**
-- 这几步完成后即可实现 `--mode` + `--clips` + `--preset` + Diversity 去重
-- 纯程序逻辑部分（4.4/4.5）开发成本低、可测试性强
-- 效果提升明显，可快速验证方向
-
----
-
-### 5. 多语言混合视频支持
-
-中文视频常夹杂英文术语，Whisper 标点处理不够完美。
-
-**功能设计：**
 - 转录后增加标点修复后处理（基于语言模型）
 - 支持指定多种语言：`--language zh,en`
 - 语言切换检测：自动识别视频中的语言切换点
@@ -574,147 +250,120 @@ src/
 
 ---
 
+## 中期目标（功能扩展）
+
+### Smart Clip Engine v2.0 增强
+
+> MVP 已完成（4.1-4.10），以下功能待实现
+
+- [ ] **4.11** CLI 集成 + 端到端测试
+- [ ] **OpenCV Scene Detection** — 基于帧差异的场景检测器（当前只有 Whisper segment 分组）
+- [ ] **说话人分离** — 通过音频特征检测说话人变化，作为 Scene Detection 信号
+- [ ] **片段质量评估** — 客观指标（PSNR, SSIM）+ 主观评分
+
+---
+
 ## 远期目标（架构升级）
 
-### 6. FastAPI 服务化
+### Viral Engine：短视频精剪引擎
 
-将 CLI 工具升级为 HTTP 服务，支持远程调用和嵌入其他系统。
+> 目标：从游戏录播/直播长视频中自动精剪为 **短视频（30-60s）** 或 **精华合集（10-25min）**
 
-**功能设计：**
-- REST API 端点：
-  - `POST /transcribe` — 上传视频，返回字幕
-  - `POST /analyze` — 提交字幕，返回分析报告
-  - `POST /clip` — 提交报告 + 视频，返回剪辑文件
-  - `GET /tasks/{id}/status` — 查询任务进度
+```
+长视频 → Stage 1: 转录 → Stage 2: Attention Scanner
+  → Stage 3: 亮点识别 + Viral Builder → Stage 4: Story Planner
+  → Stage 5: Render Engine → 短视频 / 精华合集
+```
+
+**新增模块：**
+- **Attention Scanner** — 音频+文本混合分析，生成每秒注意力曲线
+- **Viral Builder** — 片段 + 传播角色标注
+- **Story Planner** — 按模板组装片段，生成 EDL 编辑决策列表
+- **Render Engine** — 字幕烧录/缩放/去静音
+
+---
+
+### 服务化部署
+
 - 任务队列：长任务异步化（Celery / ARQ）
-- WebSocket 实时进度推送
 - 文件上传支持（multipart / 分片上传）
-
-**涉及文件：** 新增 `src/server/` 模块（FastAPI 应用）
+- 多用户支持（项目隔离、权限管理）
+- Docker 容器化部署
 
 ---
 
 ## 技术债务
 
-- [ ] `clipper.py` 中 `_merge_with_fade` 的 complex filter 构建逻辑需要更多边界测试（片段时长 < 转场时长等）
-- [ ] ffmpeg 错误处理可以更精细（区分编码错误、格式不支持、磁盘空间不足等）
-- [ ] 缺少单元测试覆盖 `clipper.py`
+- [ ] `clipper.py` 中 `_merge_with_fade` 的 complex filter 需要更多边界测试
+- [ ] ffmpeg 错误处理可以更精细（区分编码错误、格式不支持、磁盘空间不足）
+- [ ] 缺少 `clipper.py` 单元测试
 - [ ] 配置文件缺少 schema 验证（建议用 pydantic 替代裸 dict）
+- [ ] `src/web/ui.py` NiceGUI 代码将在 Phase 8 删除
 
 ---
 
-## 可视化界面（远期规划）
+## 已完成的历史记录
 
-### 需求分析
+### Smart Clip Engine v2.0（2026-06-25 完成）
 
-当前 CLI 工具功能完整，但对非技术用户不够友好。可视化界面需要解决：
-- 批量视频的拖拽上传和队列管理
-- 转录/分析进度的实时可视化
-- 亮点片段的时间轴预览（类似视频编辑器的轨道视图）
-- 一键导出剪辑结果
+四层架构：AI 内容理解 → 规则引擎 → 策略引擎 → 最终优化
 
-### 方案对比
+**已完成模块：**
+- [x] 4.1 数据结构升级（Scene, ClipCandidate 模型）
+- [x] 4.2 Scene Detection（Whisper segment 分组 MVP + OpenCV 预留接口）
+- [x] 4.3 LLM Scene 标注 prompt + 分段调用
+- [x] 4.4 Score Engine（preset 权重: douyin/youtube/bilibili/viral/all）
+- [x] 4.5 Filter Engine（Diversity 去重、数量/时长约束）
+- [x] 4.6 Clip Mode + Clip Count（CLI 参数）
+- [x] 4.7 Duration Planner（60s/90s/180s/300s 模板 + 动态生成）
+- [x] 4.8 Category Weight（预设权重 JSON + 用户自定义）
+- [x] 4.9 用户自定义 Prompt
+- [x] 4.10 LLM Final Review（二阶段筛选）
 
-| 方案 | 技术栈 | 优点 | 缺点 | 适合场景 |
-|------|--------|------|------|----------|
-| **桌面应用** | Tauri + React | 体积小(<5MB)、原生性能、可调用本地 ffmpeg | 需要打包分发、多平台适配 | 个人用户、离线使用 |
-| **Web 服务** | FastAPI + React/Vue | 跨平台、无需安装、可远程访问 | 需要部署服务器、大文件上传体验差 | 团队协作、云端部署 |
-| **轻量 GUI** | NiceGUI (Python) | 纯 Python 开发、与现有代码无缝集成、开发快 | 功能受限、不适合复杂交互 | 快速原型、内部工具 |
-| **Electron** | Electron + React | 生态成熟、功能强大 | 包体积大(>100MB)、内存占用高 | 商业产品、功能丰富 |
-
-### 推荐方案：分两阶段实现
-
-#### 阶段一：NiceGUI 快速原型（2-3 周）
-
-**为什么选 NiceGUI：**
-- 纯 Python，无需前端工程师，与现有代码栈零摩擦
-- 内置文件上传、进度条、表格、图表组件
-- 开发速度极快，适合验证界面交互逻辑
-- 生成的 Web 界面可通过浏览器访问（localhost:8080）
-
-**MVP 功能：**
-- 文件上传区（支持拖拽 + 批量选择）
-- 处理队列表格（实时状态更新）
-- 亮点时间轴（可点击选中/取消片段）
-- 导出面板（选择片段 + 配置参数）
-
-**涉及文件：** 新增 `src/gui/nicegui_app.py`
-
----
-
-#### 阶段二：Tauri + React 桌面应用（1-2 个月）
-
-**升级到 Tauri 的触发条件：**
-- NiceGUI 原型验证了交互逻辑
-- 需要打包分发给非技术用户
-- 需要更丰富的视频预览（原生视频播放器集成）
-- 需要离线使用和系统级集成（右键菜单、文件关联）
-
-**Tauri 专属功能：**
-- **原生视频预览**：集成系统播放器，支持倍速、跳转
-- **时间轴编辑器**：拖拽调整片段边界、合并/拆分亮点
-- **右键菜单集成**：右键视频文件 → "用 VideoAgent 处理"
-- **系统托盘**：后台处理时最小化到托盘
-- **自动更新**：内置更新机制
-- **多平台打包**：Windows / macOS / Linux 一键打包
-
----
-
-### 界面功能清单（按优先级）
-
-| 优先级 | 功能 | 说明 |
-|--------|------|------|
-| P0 | 文件拖拽上传 | 支持单个/批量视频文件 |
-| P0 | 处理进度展示 | 转录/分析/剪辑三阶段进度条 |
-| P0 | 亮点时间轴 | 可视化展示亮点片段，支持选中/取消 |
-| P0 | 一键导出 | 导出独立片段 + 精华视频 + 报告 |
-| P1 | 视频预览播放 | 预览原始视频和剪辑片段 |
-| P1 | 片段边界调整 | 在时间轴上拖拽微调片段起止时间 |
-| P1 | 批量队列管理 | 暂停/恢复/取消/重跑 |
-| P2 | 片段合并/拆分 | 手动合并相邻片段或拆分过长片段 |
-| P2 | 转场效果选择 | 选择不同转场类型（淡入/滑动/缩放） |
-| P2 | 字幕预览 | 在视频预览中叠加字幕 |
-| P3 | 模板系统 | 保存剪辑配置为模板（评分阈值、时长限制等） |
-| P3 | 历史记录 | 查看历史处理记录，支持重新导出 |
-| P3 | 快捷键支持 | 键盘操作时间轴、播放控制 |
-
----
-
-## Viral Engine：短视频精剪引擎（v2.0 规划）
-
-> 目标：从游戏录播/直播长视频中自动精剪为 **短视频（30-60s）** 或 **精华合集（10-25min）**  
-> 用户：自用（不追求产品化，追求效果）  
-> 原则：保留现有管线，增量升级
-
----
-
-### 整体架构
-
+**数据流：**
 ```
-          长视频 (直播/录播)
-                ↓
-    ┌─────────────────────┐
-    │ Stage 1: 转录       │  (已有) Whisper → 字幕
-    └─────────┬───────────┘
-              ↓
-    ┌─────────────────────┐
-    │ Stage 2: 注意力扫描  │  (新增) 音频+文本混合分析
-    │   Attention Scanner  │  → 每秒注意力曲线
-    └─────────┬───────────┘
-              ↓
-    ┌─────────────────────┐
-    │ Stage 3: 亮点识别    │  (已有+升级) LLM 分析
-    │   + Viral Builder    │  → 片段 + 传播角色标注
-    └─────────┬───────────┘
-              ↓
-    ┌─────────────────────┐
-    │ Stage 4: 故事编排    │  (新增) 按模板组装片段
-    │   Story Planner      │  → EDL 编辑决策列表
-    └─────────┬───────────┘
-              ↓
-    ┌─────────────────────┐
-    │ Stage 5: 渲染输出    │  (已有+增强) ffmpeg 剪辑
-    │   Render Engine      │  → 字幕烧录/缩放/去静音
-    └─────────┬───────────┘
-              ↓
-    �
+Whisper Segments → Scene Detection → Scene[]
+Scene[] → LLM 标注 → Scene[] (含 tags, multi_score)
+Scene[] → Score Engine → ClipCandidate[] (含 composite_score)
+ClipCandidate[] → Filter Engine → 选中的 ClipCandidate[]
+选中的 → Duration Planner → 按目标时长组合（可选）
+选中的 → Final Review → LLM 最终精选（可选）
+选中的 → Clipper → 最终片段
+```
+
+**权重系统：**
+- Preset 权重：douyin / youtube / bilibili / viral / all
+- Clip Mode 权重：comedy / action / emotion / dialogue / knowledge / hook / viral / all
+- 评分维度：hook / emotion / comedy / action / information / suspense / climax / viral
+
+---
+
+### 长视频分段转录策略（2026-06-24 完成）
+
+**已实现：** `src/utils/audio_preprocess.py` + `src/transcribe/merger.py`
+
+**流水线：**
+```
+Video → FFmpeg extract → 16kHz mono WAV → Audio chunking (15min + 10s overlap)
+  → Whisper batch (per chunk) → Global timestamp normalization
+  → Segment-level overlap dedup → Final TranscriptResult
+```
+
+**真实验证：** 140 分钟电影全流程（10 chunks，7171 segments，6 个亮点）
+
+---
+
+### Web 控制台 v1（NiceGUI，已废弃）
+
+> 已实现基础功能，但 NiceGUI 不适合复杂交互（DAG 编排、时间轴编辑）
+> 正在迁移到 Next.js + React Flow 架构
+
+**已实现的功能（迁移到后端 API）：**
+- FastAPI + NiceGUI Web 界面
+- TaskManager（任务生命周期、字幕审核暂停/恢复、WebSocket 推送）
+- Pipeline 全流程（转录 → 审核 → 分析 → 剪辑）
+- REST API：任务 CRUD、进度查询、文件下载
+
+**迁移状态：**
+- ✅ 后端 API 扩展完成（Phase 1）
+- 🟡 Next.js 前端开发中（Phase 2-8）

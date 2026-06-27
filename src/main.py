@@ -899,5 +899,33 @@ def version():
     console.print(f"VideoAgent v{__version__}")
 
 
+@app.command(name="serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="监听地址"),
+    port: int = typer.Option(8501, "--port", "-p", help="监听端口"),
+):
+    """启动 Web 控制台
+
+    在浏览器中访问 http://{host}:{port} 打开 Web 界面。
+
+    示例:
+      # 默认启动 (localhost:8501)
+      videoagent serve
+
+      # 自定义端口
+      videoagent serve --port 8080
+
+      # 局域网访问
+      videoagent serve --host 0.0.0.0 --port 8501
+    """
+    console.print(f"[bold blue]VideoAgent[/bold blue] - 启动 Web 控制台")
+    console.print(f"  地址: http://{host}:{port}")
+    console.print(f"  按 Ctrl+C 停止服务")
+    console.rule()
+
+    from src.web.app import run as run_web
+    run_web(host=host, port=port)
+
+
 if __name__ == "__main__":
     app()

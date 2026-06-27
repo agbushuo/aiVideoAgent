@@ -670,7 +670,9 @@ class LLMAnalyzer:
                     + "例如：如果用户要求'切情侣吵架片段'，"
                     + "则对包含争吵、情感冲突的场景提高 emotion 和 action 评分。"
                 )
-            prompt = prompt.format(scenes_text=scenes_text)
+            prompt = re.sub(
+                r'\{scenes_text\}', scenes_text, prompt
+            )
 
             # 构建 system prompt
             system = self._system_prompt
