@@ -1,0 +1,238 @@
+[
+  {
+    "name": "douyin",
+    "displayName": "抖音爆款",
+    "description": "适合抖音平台的短视频剪辑，强调开头吸引力和情绪爆发",
+    "stageParams": {
+      "transcribe": {
+        "language": "zh",
+        "model_name": "whisper-large-v3",
+        "device": "cuda"
+      },
+      "scene_detection": {
+        "gap_threshold": 10,
+        "min_scene_duration": 3,
+        "max_scene_duration": 120
+      },
+      "llm_annotation": {
+        "user_prompt": ""
+      },
+      "scoring": {
+        "preset": "douyin",
+        "clip_mode": "all"
+      },
+      "filtering": {
+        "max_clips": 0,
+        "min_gap": 0,
+        "target_duration": 0
+      },
+      "duration_planning": {
+        "target_duration": 0
+      },
+      "final_review": {
+        "num_to_select": null
+      },
+      "clipping": {
+        "merge": true,
+        "transition": 0.5
+      }
+    },
+    "weights": {
+      "hook": 0.4,
+      "emotion": 0.3,
+      "climax": 0.2,
+      "information": 0.1
+    },
+    "prompts": {}
+  },
+  {
+    "name": "youtube",
+    "displayName": "YouTube 长视频",
+    "description": "适合 YouTube 平台，侧重信息密度和高潮内容",
+    "stageParams": {
+      "transcribe": {
+        "language": "zh",
+        "model_name": "whisper-large-v3",
+        "device": "cuda"
+      },
+      "scene_detection": {
+        "gap_threshold": 10,
+        "min_scene_duration": 3,
+        "max_scene_duration": 120
+      },
+      "llm_annotation": {
+        "user_prompt": ""
+      },
+      "scoring": {
+        "preset": "youtube",
+        "clip_mode": "all"
+      },
+      "filtering": {
+        "max_clips": 0,
+        "min_gap": 0,
+        "target_duration": 0
+      },
+      "duration_planning": {
+        "target_duration": 0
+      },
+      "final_review": {
+        "num_to_select": null
+      },
+      "clipping": {
+        "merge": true,
+        "transition": 0.5
+      }
+    },
+    "weights": {
+      "information": 0.5,
+      "climax": 0.3,
+      "hook": 0.2,
+      "emotion": 0.1
+    },
+    "prompts": {}
+  },
+  {
+    "name": "bilibili",
+    "displayName": "B 站风格",
+    "description": "适合 B 站风格，平衡知识性和娱乐性",
+    "stageParams": {
+      "transcribe": {
+        "language": "zh",
+        "model_name": "whisper-large-v3",
+        "device": "cuda"
+      },
+      "scene_detection": {
+        "gap_threshold": 10,
+        "min_scene_duration": 3,
+        "max_scene_duration": 120
+      },
+      "llm_annotation": {
+        "user_prompt": ""
+      },
+      "scoring": {
+        "preset": "bilibili",
+        "clip_mode": "all"
+      },
+      "filtering": {
+        "max_clips": 0,
+        "min_gap": 0,
+        "target_duration": 0
+      },
+      "duration_planning": {
+        "target_duration": 0
+      },
+      "final_review": {
+        "num_to_select": null
+      },
+      "clipping": {
+        "merge": true,
+        "transition": 0.5
+      }
+    },
+    "weights": {
+      "information": 0.35,
+      "comedy": 0.25,
+      "emotion": 0.2,
+      "hook": 0.15,
+      "climax": 0.1
+    },
+    "prompts": {}
+  },
+  {
+    "name": "viral",
+    "displayName": "病毒传播",
+    "description": "追求病毒式传播，强调开头和搞笑元素",
+    "stageParams": {
+      "transcribe": {
+        "language": "zh",
+        "model_name": "whisper-large-v3",
+        "device": "cuda"
+      },
+      "scene_detection": {
+        "gap_threshold": 10,
+        "min_scene_duration": 3,
+        "max_scene_duration": 120
+      },
+      "llm_annotation": {
+        "user_prompt": ""
+      },
+      "scoring": {
+        "preset": "viral",
+        "clip_mode": "all"
+      },
+      "filtering": {
+        "max_clips": 0,
+        "min_gap": 0,
+        "target_duration": 0
+      },
+      "duration_planning": {
+        "target_duration": 0
+      },
+      "final_review": {
+        "num_to_select": null
+      },
+      "clipping": {
+        "merge": true,
+        "transition": 0.5
+      }
+    },
+    "weights": {
+      "hook": 0.3,
+      "emotion": 0.25,
+      "comedy": 0.2,
+      "climax": 0.15,
+      "information": 0.1
+    },
+    "prompts": {}
+  },
+  {
+    "name": "all",
+    "displayName": "均衡模式",
+    "description": "均衡评分，所有维度权重相等",
+    "stageParams": {
+      "transcribe": {
+        "language": "zh",
+        "model_name": "whisper-large-v3",
+        "device": "cuda"
+      },
+      "scene_detection": {
+        "gap_threshold": 10,
+        "min_scene_duration": 3,
+        "max_scene_duration": 120
+      },
+      "llm_annotation": {
+        "user_prompt": ""
+      },
+      "scoring": {
+        "preset": "all",
+        "clip_mode": "all"
+      },
+      "filtering": {
+        "max_clips": 0,
+        "min_gap": 0,
+        "target_duration": 0
+      },
+      "duration_planning": {
+        "target_duration": 0
+      },
+      "final_review": {
+        "num_to_select": null
+      },
+      "clipping": {
+        "merge": true,
+        "transition": 0.5
+      }
+    },
+    "weights": {
+      "hook": 0.125,
+      "emotion": 0.125,
+      "comedy": 0.125,
+      "action": 0.125,
+      "information": 0.125,
+      "suspense": 0.125,
+      "climax": 0.125,
+      "viral": 0.125
+    },
+    "prompts": {}
+  }
+]

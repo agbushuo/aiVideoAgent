@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "cwd": "frontend"
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "C:\\Users\\Administrator\\.conda\\envs\\ai-video\\python.exe",
+      "runtimeArgs": ["-c", "from src.web.app import run; run()"],
+      "port": 8501
+    }
+  ]
+}

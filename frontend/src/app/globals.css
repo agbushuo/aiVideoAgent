@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #e4e4e7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* VideoAgent brand colors */
+  --color-brand-50: #f0f5ff;
+  --color-brand-100: #e0eaff;
+  --color-brand-200: #c2d5ff;
+  --color-brand-300: #a3baff;
+  --color-brand-400: #7b95ff;
+  --color-brand-500: #5b71ff;
+  --color-brand-600: #4454e8;
+  --color-brand-700: #2d38c2;
+  --color-brand-800: #1e2394;
+  --color-brand-900: #0f1066;
+
+  --color-surface: #12121a;
+  --color-surface-elevated: #1a1a26;
+  --color-surface-overlay: #222236;
+  --color-border: #2a2a3c;
+  --color-border-hover: #3a3a52;
+
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3a3a52;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a62;
+}
