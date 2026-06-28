@@ -2,6 +2,11 @@
 
 ## 2026-06-27
 
+### 清理测试文件和依赖
+- **删除** `tests/`：全部测试文件（conftest.py、__init__.py、test_analyze.py、test_transcribe.py），测试已跑过且不再维护
+- **删除** `run_test.py`：CLI 快速测试脚本
+- **更新** `pyproject.toml`：移除 `[project.optional-dependencies] dev` 中的 pytest/pytest-asyncio
+
 ### 设置保存同步写入 config.yaml
 - **更新** `src/web/settings_manager.py`：`save_settings()` 调用 `_sync_config_yaml()` 将 LLM 设置写入 `config.yaml` 的 llm 段（正则匹配替换 provider/model/endpoint/api_key/temperature/max_tokens），新增 `get_active_llm_config_from()` 从内存字典读取配置（不读文件），`DEFAULT_SETTINGS` 新增 `theme`/`accentColor` 默认值，`load_settings()` 合并逻辑扩展为处理 `theme` 和 `accentColor`
 

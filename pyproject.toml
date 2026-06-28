@@ -25,12 +25,6 @@ dependencies = [
     "uvicorn>=0.24",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio",
-]
-
 [project.scripts]
 videoagent = "src.main:app"
 

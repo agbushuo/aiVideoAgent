@@ -27,7 +27,7 @@ export default function PromptEditor({
     setLoading(true);
     // If there's a preset override, use that; otherwise load the file
     if (presetOverride !== undefined) {
-      setContent(presetOverride);
+      setContent(presetOverride || "");
       setLoading(false);
     } else {
       getPrompt(promptName)
