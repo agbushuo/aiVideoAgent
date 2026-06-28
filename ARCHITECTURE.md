@@ -1,25 +1,33 @@
-# VideoAgent 项目架构规划
+# VideoAgent 项目架构
 
-> 创建日期: 2026-06-22  
-> 最后更新: 2026-06-25  
-> 状态: Phase 1-4 已完成（Smart Clip Engine v2.0 MVP 实现）
+> 创建日期: 2026-06-22
+> 最后更新: 2026-06-28
+> 状态: Web 控制台 + CLI 双模式已完成
 
 ---
 
 ## 一、项目目标
 
-构建一个**视频自动化处理 Agent**，管线如下：
+构建一个**视频自动化处理 Agent**，提供 CLI 和 Web 两种使用方式：
 
 ```
 视频文件
   ↓
-[Stage 1] Whisper large-v3 → 带时间戳字幕
+[Stage 1] Whisper large-v3 → 带时间戳字幕（长视频自动分段）
   ↓
-[Stage 2] LLM (Qwen/Ollama) → 内容总结 + 关键片段识别
+[Stage 2] Scene Detection → 场景分组
   ↓
-[Stage 3] 输出 SRT + JSON + Markdown 报告
+[Stage 3] LLM 标注 → 场景类型 + 标签 + 多维评分
   ↓
-[Stage 4] (未来) ffmpeg 自动剪辑 → 精华视频
+[Stage 4] Score Engine → 综合分计算
+  ↓
+[Stage 5] Filter Engine → Diversity 去重 + 约束筛选
+  ↓
+[Stage 6] Duration Planner → 按目标时长组合（可选）
+  ↓
+[Stage 7] LLM Final Review → 最终精选（可选）
+  ↓
+[Stage 8] ffmpeg 剪辑 → 独立片段 + 精华视频
 ```
 
 ---
@@ -29,12 +37,16 @@
 | 组件 | 选择 | 理由 |
 |------|------|------|
 | 语言 | Python 3.10+ | 生态丰富、Whisper 原生支持 |
-| 字幕引擎 | `openai-whisper large-v3` | 用户已验证可用、中文效果好 |
-| LLM | Qwen3.6 27B via llama.cpp | 本地运行、中文理解强、API 兼容 OpenAI |
+| 字幕引擎 | `openai-whisper large-v3` | 中文效果好、支持长视频分段 |
+| LLM | Qwen3.6 27B / Claude / OpenAI | 本地或在线、API 兼容 |
 | CLI 框架 | `typer` | 现代、自动生成帮助、子命令支持 |
-| 视频处理 | `ffmpeg-python` | 后期剪辑用 |
-| 配置管理 | `pydantic-settings` + YAML | 类型安全、易维护 |
-| 依赖管理 | `pyproject.toml` (uv/pip) | 现代 Python 项目标准 |
+| Web 后端 | `FastAPI` + `uvicorn` | 异步、自动文档、SSE 支持 |
+| Web 前端 | Next.js 16 + TypeScript | App Router、SSR、i18n |
+| 状态管理 | Zustand | 轻量、无 boilerplate |
+| 可视化 | React Flow (DAG) | 管线编排 |
+| 国际化 | next-intl (前端) / 字典 (后端) | 中英双语 |
+| 视频处理 | `ffmpeg-python` | 剪辑、转码 |
+| 配置管理 | YAML + JSON | config.yaml + settings.json |
 
 ---
 
@@ -43,12 +55,70 @@
 ```
 aiVideoAgent/
 ├── pyproject.toml              # 项目元数据 + 依赖
-├── config.yaml                 # 配置 (模型、路径、LLM 端点)
-├── .env                        # 敏感信息 (如有)
-├── .gitignore
+├── config.yaml                 # 配置 (Whisper/LLM/ffmpeg)
 ├── README.md
 ├── ROADMAP.md                  # 实施路线图
 ├── ARCHITECTURE.md             # 本文档
+│
+├── frontend/                   # Next.js Web 前端
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx          # 根布局（ClientProvider）
+│   │   │   ├── page.tsx            # Dashboard 主页
+│   │   │   ├── tasks/page.tsx      # 任务列表页
+│   │   │   ├── tasks/[id]/page.tsx # 任务详情页
+│   │   │   ├── presets/page.tsx    # 预设管理页
+│   │   │   └── settings/page.tsx   # 设置页
+│   │   ├── components/
+│   │   │   ├── layout/
+│   │   │   │   ├── Layout.tsx          # 全局布局（SSE 连接）
+│   │   │   │   ├── TopBar.tsx          # 顶部栏（运行/停止/语言切换）
+│   │   │   │   ├── Sidebar.tsx         # 侧边栏导航
+│   │   │   │   └── MainCanvas.tsx      # 主画布（Workflow/场景切换）
+│   │   │   ├── workflow/
+│   │   │   │   ├── WorkflowBuilder.tsx     # 管线编排根组件
+│   │   │   │   ├── ReactFlowCanvas.tsx     # DAG 画布
+│   │   │   │   ├── PipelineNode.tsx        # 自定义节点
+│   │   │   │   ├── ConfigPanel.tsx         # schema 驱动参数面板
+│   │   │   │   └── StageFormField.tsx      # 表单字段组件
+│   │   │   ├── scenes/
+│   │   │   │   ├── SceneExplorer.tsx    # 场景浏览主组件
+│   │   │   │   ├── SceneTable.tsx       # TanStack Table 表格
+│   │   │   │   ├── SceneFiltersBar.tsx  # 筛选工具栏
+│   │   │   │   ├── SceneEditModal.tsx   # 场景编辑弹窗
+│   │   │   │   └── EmptyState.tsx       # 空状态
+│   │   │   ├── console/
+│   │   │   │   ├── RunConsole.tsx         # 控制台主组件
+│   │   │   │   ├── StageStatusPanel.tsx   # 阶段状态面板
+│   │   │   │   └── LogPanel.tsx           # 实时日志面板
+│   │   │   ├── presets/
+│   │   │   │   ├── PresetList.tsx     # 预设列表
+│   │   │   │   ├── PresetEditor.tsx   # 预设编辑器
+│   │   │   │   └── PromptEditor.tsx   # Prompt 编辑器
+│   │   │   ├── FileBrowser.tsx        # 文件浏览器模态框
+│   │   │   ├── StatusBadge.tsx        # 状态徽章
+│   │   │   └── ProgressBar.tsx        # 进度条
+│   │   ├── stores/
+│   │   │   ├── taskStore.ts      # 任务状态 + SSE
+│   │   │   ├── sceneStore.ts     # 场景状态
+│   │   │   ├── workflowStore.ts  # Workflow DAG 状态
+│   │   │   └── configStore.ts    # 配置引用数据
+│   │   ├── lib/
+│   │   │   ├── api.ts          # API 客户端（含 localStorage 回退）
+│   │   │   └── sceneUtils.ts   # 场景工具函数
+│   │   └── types/
+│   │       ├── api.ts           # API 类型
+│   │       ├── config.ts        # 配置/预设类型
+│   │       ├── workflow.ts      # Workflow schema
+│   │       ├── scene.ts         # 场景类型
+│   │       ├── transcript.ts    # 字幕类型
+│   │       └── sse.ts           # SSE 事件类型
+│   ├── messages/
+│   │   ├── zh.json              # 中文翻译
+│   │   └── en.json              # 英文翻译
+│   └── i18n/
+│       ├── request.ts           # next-intl 请求配置
+│       └── ClientProvider.tsx   # 客户端 Provider
 │
 ├── src/
 │   ├── __init__.py
@@ -57,62 +127,74 @@ aiVideoAgent/
 │   │
 │   ├── transcribe/
 │   │   ├── __init__.py
-│   │   ├── whisper_engine.py   # Whisper 封装
-│   │   │                           #   - load_model()
-│   │   │                           #   - transcribe() → TranscriptResult
-│   │   │                           #   - unload()
-│   │   ├── models.py           # 数据模型 (Segment, TranscriptResult)
+│   │   ├── whisper_engine.py   # Whisper 封装（含分段转录）
+│   │   ├── models.py           # Segment, TranscriptResult
 │   │   └── merger.py           # 分段转录去重合并
 │   │
 │   ├── analyze/
 │   │   ├── __init__.py
 │   │   └── llm_analyzer.py     # LLM 分析引擎
-│   │                           #   - analyze() → AnalysisReport (兼容旧版)
-│   │                           #   - analyze_scenes() → list[Scene] (新版 Scene 标注)
+│   │                           #   - analyze() → AnalysisReport
+│   │                           #   - analyze_scenes() → list[Scene]
 │   │
-│   ├── clip_engine/            # 智能片段筛选引擎 (Smart Clip Engine v2.0 ✅)
+│   ├── clip_engine/            # 智能片段筛选引擎 v2.0
 │   │   ├── __init__.py
-│   │   ├── models.py           # Scene, ClipCandidate, ClipResult 数据模型
-│   │   ├── scene_detector.py   # Scene Detection（Whisper segment 分组 + OpenCV 预留）
-│   │   ├── scorer.py           # Score Engine（多维评分 + preset 权重计算）
-│   │   ├── filter.py           # Filter Engine（Diversity 去重、数量/时长约束）
-│   │   └── planner.py          # Duration Planner（目标时长组合规划，待实现）
+│   │   ├── models.py           # Scene, ClipCandidate, ClipResult
+│   │   ├── scene_detector.py   # Scene Detection
+│   │   ├── scorer.py           # Score Engine（多维评分 + preset 权重）
+│   │   ├── filter.py           # Filter Engine（Diversity 去重）
+│   │   ├── planner.py          # Duration Planner（目标时长组合）
+│   │   └── reviewer.py         # Final Reviewer（LLM 二阶段筛选）
 │   │
 │   ├── edit/
 │   │   ├── __init__.py
-│   │   └── clipper.py          # 视频剪辑模块 (已完成)
-│   │                           #   - clips_from_report() → 从 JSON 一键提取
-│   │                           #   - extract_segment() → 单个片段裁剪
-│   │                           #   - merge_clips() → 拼接精华视频
+│   │   └── clipper.py          # ffmpeg 剪辑模块
+│   │                           #   - clips_from_report()
+│   │                           #   - extract_segment()
+│   │                           #   - merge_clips()
 │   │
 │   ├── batch/
-│   │   └── __init__.py         # 批量处理模块 (已完成)
-│   │                           #   - discover_videos() → 发现视频文件
-│   │                           #   - run_batch() → 串行批处理
-│   │                           #   - BatchResult → 批处理结果聚合
+│   │   └── __init__.py         # 批量处理模块
+│   │                           #   - discover_videos()
+│   │                           #   - run_batch()
+│   │
+│   ├── web/                    # FastAPI Web 后端
+│   │   ├── __init__.py
+│   │   ├── app.py              # FastAPI 应用 + 34+ REST 端点
+│   │   ├── api_schemas.py      # Pydantic 请求/响应模型
+│   │   ├── task_manager.py     # 任务生命周期 + 持久化
+│   │   ├── pipeline_runner.py  # 管线执行器（8 阶段）
+│   │   ├── stage_executor.py   # 阶段执行器
+│   │   ├── sse.py              # SSE 事件流系统
+│   │   ├── preset_manager.py   # 预设管理（data/presets.json）
+│   │   └── settings_manager.py # 用户设置管理（data/settings.json）
 │   │
 │   └── utils/
 │       ├── __init__.py
-│       ├── video_info.py       # 视频元信息 (时长、分辨率、编码)
-│       └── io.py               # 文件 I/O (SRT 读写、JSON 序列化、报告导出)
+│       ├── i18n.py             # 后端国际化（zh/en 字典）
+│       ├── video_info.py       # 视频元信息
+│       ├── audio_preprocess.py # 音频预处理（分段转录）
+│       └── io.py               # 文件 I/O
 │
 ├── prompts/
 │   ├── system.md               # LLM system prompt
-│   ├── highlight_extract.md    # 亮点提取 prompt 模板 (兼容旧版)
-│   └── scene_analysis.md       # Scene 标注 prompt 模板 (Smart Clip v2.0)
+│   ├── highlight_extract.md    # 亮点提取 prompt（兼容旧版）
+│   ├── scene_analysis.md       # Scene 标注 prompt
+│   └── final_review.md         # Final Review prompt
 │
-├── outputs/                    # 输出目录 (gitignore)
-│   ├── subtitles/              # SRT + JSON 字幕文件
-│   ├── reports/                # JSON + Markdown 报告
-│   └── clips/                  # 剪辑后的视频片段 + 精华视频
+├── data/                       # 持久化数据
+│   ├── tasks.json              # 任务状态（后端重启不丢失）
+│   ├── presets.json            # 预设配置
+│   └── settings.json           # 用户设置（LLM 配置、外观）
 │
 ├── logs/
 │   └── CHANGELOG.md            # 变更记录
 │
-└── tests/
-    ├── test_transcribe.py
-    ├── test_analyze.py
-    └── conftest.py
+└── outputs/                    # 输出目录 (gitignore)
+    ├── {video_stem}/
+    │   ├── subtitles/          # SRT + JSON 字幕
+    │   ├── reports/            # JSON + Markdown 报告
+    │   └── artifacts/          # scenes_annotated.json, candidates.json
 ```
 
 ---
@@ -121,10 +203,13 @@ aiVideoAgent/
 
 ### 4.1 转录阶段
 
-```python
-# 输入: video_path (str)
-# 输出: TranscriptResult (dataclass)
+```
+视频文件 → WhisperEngine.transcribe() → TranscriptResult
+                                    ↓
+                    （>30min 自动分段 → chunk → 去重合并）
+```
 
+```python
 @dataclass
 class Segment:
     start: float        # 开始时间 (秒)
@@ -137,275 +222,178 @@ class TranscriptResult:
     language: str       # 检测到的语言
     segments: list[Segment]
     text: str           # 完整文本
+    duration: float     # 总时长
 ```
 
-### 4.2 分析阶段
-
-```python
-# 输入: TranscriptResult
-# 输出: AnalysisReport (dataclass)
-
-@dataclass
-class Highlight:
-    segment_id: int           # 对应字幕片段索引
-    start: float              # 开始时间
-    end: float                # 结束时间
-    title: str                # 亮点标题
-    reason: str               # 为什么值得剪
-    score: float              # 重要度评分 (0-1)
-
-@dataclass
-class AnalysisReport:
-    summary: str              # 视频整体总结
-    highlights: list[Highlight]  # 亮点片段列表
-    metadata: dict            # 分析元信息 (模型、耗时等)
-```
-
-### 4.3 输出格式
-
-**JSON 报告** (`outputs/reports/video_20260622.json`):
-```json
-{
-  "video": "input.mkv",
-  "duration": 180.5,
-  "language": "zh",
-  "summary": "这是一个关于...的视频",
-  "highlights": [
-    {
-      "segment_id": 12,
-      "start": 45.2,
-      "end": 78.5,
-      "title": "核心观点阐述",
-      "reason": "讲者在此处提出了全文最重要的论点...",
-      "score": 0.95
-    }
-  ],
-  "analysis_by": "Qwen/Ollama",
-  "analyzed_at": "2026-06-22T10:30:00+08:00"
-}
-```
-
-**SRT 字幕** (`outputs/subtitles/video_20260622.srt`):
-```
-1
-00:00:00,000 --> 00:00:05,500
-大家好，欢迎来到今天的视频
-
-2
-00:00:05,500 --> 00:00:12,000
-今天我们来讲一讲...
-```
-
-**Markdown 报告** (`outputs/reports/video_20260622.md`):
-```markdown
-# 视频分析报告
-
-## 概要
-视频整体总结内容...
-
-## 亮点片段
-
-### 1. 核心观点阐述 (00:45 - 01:18) ⭐ 0.95
-**为什么值得剪:** 讲者在此处提出了...
-
-### 2. 案例演示 (02:30 - 03:15) ⭐ 0.88
-**为什么值得剪:** 这段演示非常直观...
-```
-
-### 4.4 Smart Clip Engine 数据流
-
-#### 4.4.1 Scene 模型
-
-```python
-# 输入: TranscriptResult
-# 输出: list[Scene]
-
-@dataclass
-class Scene:
-    """场景 — 由多个 Whisper segment 逻辑分组而成"""
-    scene_id: int                  # 场景编号
-    start: float                   # 开始时间（秒）
-    end: float                     # 结束时间（秒）
-    segment_ids: list[int]         # 包含的 Whisper segment 索引
-    text: str                      # 场景完整文本
-
-    # LLM 标注结果
-    scene_type: str                # Dialogue / Comedy / Fight / Romance / ...
-    tags: list[str]                # [搞笑, 情绪爆发, 冲突, 高能]
-    summary: str                   # 场景简短描述
-
-    # 多维评分（0-10 分制）
-    multi_score: dict[str, float]  # {hook, emotion, comedy, action, ...}
-```
-
-#### 4.4.2 ClipCandidate 模型
-
-```python
-@dataclass
-class ClipCandidate:
-    """剪辑候选 — 由 Scene 经规则引擎筛选后生成"""
-    scene: Scene
-    composite_score: float         # 根据 preset 权重计算的综合分
-    rank: int                      # 排序位置
-    selected: bool                 # 是否被最终选中
-```
-
-#### 4.4.3 数据流
+### 4.2 Smart Clip Engine 数据流
 
 ```
-TranscriptResult (Whisper segment 列表)
+TranscriptResult (Whisper segments)
     │
-    ▼  [SceneDetector.detect_scenes()]
-list[Scene] (场景列表，含时间边界和文本)
+    ▼  SceneDetector.detect_scenes()
+list[Scene] (场景列表)
     │
-    ▼  [LLMAnalyzer.scene_analysis()] — 分批调用
-list[Scene] (每个 Scene 填充 scene_type, tags, multi_score, summary)
+    ▼  LLMAnalyzer.analyze_scenes() — 分批标注
+list[Scene] (含 scene_type, tags, multi_score, summary)
     │
-    ▼  [Scorer.compute()] — 根据 preset 权重计算综合分
+    ▼  ScoreEngine.compute() — preset 权重计算综合分
 list[ClipCandidate] (含 composite_score)
     │
-    ▼  [FilterEngine.filter()] — Diversity 去重 + 数量/时长约束
+    ▼  ClipFilter.filter() — Diversity 去重 + 约束
 list[ClipCandidate] (筛选后的候选)
     │
-    ▼  [DurationPlanner.plan()] — 按目标时长组合
-ClipPlan (最终的剪辑方案，含片段顺序和时长分配)
+    ▼  DurationPlanner.plan() — 按目标时长组合（可选）
+ClipPlan (最终剪辑方案)
     │
-    ▼  [LLMAnalyzer.final_review()] — 可选，最终精选
-ClipPlan (LLM 重排序后的最终方案)
+    ▼  FinalReviewer.review() — LLM 最终精选（可选）
+list[ClipCandidate] (精选后)
     │
-    ▼  [Clipper.clips_from_report()] — ffmpeg 裁剪 + 拼接
+    ▼  Clipper.extract_segment() + merge_clips()
 输出视频文件
 ```
 
-#### 4.4.4 Scene Detection 接口设计
+### 4.3 Web 后端数据流
 
-```python
-class SceneDetector(ABC):
-    """场景检测器抽象基类 — 预留多种检测方案"""
+```
+浏览器 → Next.js rewrites → FastAPI (:8501)
 
-    @abstractmethod
-    def detect_scenes(
-        self,
-        segments: list[Segment],
-        video_path: str | None = None,
-    ) -> list[Scene]:
-        ...
+用户操作
+    │
+    ▼
+POST /api/tasks          → 创建 PipelineTask，保存到 data/tasks.json
+    │
+    ▼
+pipeline_runner.run_pipeline()
+    │
+    ├── Stage 1: transcribe     → WhisperEngine
+    ├── Stage 2: scene_detection → WhisperSegmentDetector
+    ├── Stage 3: scene_annotation → LLMAnalyzer.analyze_scenes()
+    ├── Stage 4: scoring        → ScoreEngine
+    ├── Stage 5: filtering      → ClipFilter
+    ├── Stage 6: planning       → DurationPlanner（可选）
+    ├── Stage 7: review         → FinalReviewer（可选）
+    └── Stage 8: clipping       → Clipper
+    │
+    ▼
+SSE broadcast → 浏览器实时更新（日志、进度、状态）
+    │
+    ▼
+data/tasks.json 持久化（关键节点自动保存）
+```
 
-class WhisperSegmentDetector(SceneDetector):
-    """基于 Whisper segment 逻辑分组（MVP 方案）
+### 4.4 设置优先级
 
-    分组规则：
-    - 时间间隔 > threshold（默认 5 秒）→ 新 Scene
-    - 纯文本分析，无需视频文件
-    """
-    ...
+```
+config.yaml (默认值)
+    └── 被 data/settings.json 覆盖（用户 Web 设置）
+            └── 保存时同步写回 config.yaml llm 段
+            └── 浏览器 localStorage 缓存（离线回退）
 
-class OpenCVSceneDetector(SceneDetector):
-    """基于 OpenCV 帧差异的场景检测（未来方案）
-
-    需要视频文件输入，使用 cv2.scene.detect() 或自定义帧差异算法。
-    """
-    ...
+优先级: 用户设置 > config.yaml 默认值
 ```
 
 ---
 
-## 五、CLI 命令设计 (typer)
+## 五、CLI 命令
 
 ```bash
-# 转录视频 → 字幕
-videoagent transcribe input.mkv --language zh --output-dir ./outputs
+# 转录
+videoagent transcribe input.mkv --language zh
 
-# 分析字幕 → 报告
-videoagent analyze ./outputs/subtitles/input.json --output-dir ./outputs
+# 分析
+videoagent analyze outputs/subtitles/input.json --video input.mp4
 
-# 从报告提取亮点片段（兼容旧版）
-videoagent clip ./outputs/reports/input.json --merge --min-score 0.7
+# 传统剪辑
+videoagent clip outputs/reports/input.json --merge --min-score 0.7
 
-# 智能片段筛选（新版 Smart Clip Engine v2.0）
-videoagent clip report.json --video input.mp4 --smart-clip \
-    --transcript subtitles.json --mode comedy --clips 5
-videoagent clip report.json --video input.mp4 --smart-clip \
-    --transcript subtitles.json --preset douyin --duration 60s
-videoagent clip report.json --video input.mp4 --smart-clip \
-    --transcript subtitles.json --prompt "切情侣吵架片段"
+# Smart Clip v2.0
+videoagent clip report.json -v input.mp4 --smart-clip \
+    --transcript subtitles.json --mode comedy --clips 5 --preset douyin
 
-# 一键全流程 (转录 + 分析)
-videoagent pipeline input.mkv --language zh
+# 全流程
+videoagent pipeline input.mp4 --smart-clip --mode viral --preset douyin
 
-# 一键全流程 + 传统剪辑
-videoagent pipeline input.mkv --clip --min-score 0.7
+# 批量处理
+videoagent batch "D:/videos/" --clip
 
-# 一键全流程 + 智能剪辑 (Smart Clip Engine v2.0)
-videoagent pipeline input.mkv --smart-clip --mode viral --preset douyin --clips 10
-videoagent pipeline input.mkv --smart-clip --mode comedy --duration 180s
+# Web 服务
+videoagent serve --host 0.0.0.0 --port 8501
 
-# 批量处理多个视频
-videoagent batch "D:/videos/" --clip --min-score 0.7
-videoagent batch "D:/videos/*.mp4" --clip --no-merge
-
-# 查看帮助
-videoagent --help
-videoagent transcribe --help
+# 版本
+videoagent version
 ```
 
 ---
 
-## 六、LLM Prompt 设计
+## 六、Web API 端点
 
-### System Prompt (核心分析)
-```
-你是一个视频内容分析专家。你的任务是分析视频字幕，
-识别出最有价值的片段，并解释为什么这些片段值得保留。
+### 任务管理
+- `GET /api/tasks` — 任务列表
+- `POST /api/tasks` — 创建任务
+- `GET /api/tasks/{id}` — 任务详情
+- `DELETE /api/tasks/{id}` — 删除任务
+- `DELETE /api/tasks/bulk-delete` — 批量删除
+- `POST /api/tasks/{id}/resume` — 恢复任务
+- `POST /api/tasks/{id}/cancel` — 取消任务
+- `POST /api/tasks/{id}/rerun-stage` — 重跑阶段
 
-输出必须是严格的 JSON 格式，包含 summary 和 highlights 两个字段。
-每个 highlight 包含: segment_id, start, end, title, reason, score。
-```
+### 阶段执行
+- `GET /api/tasks/{id}/stages` — 阶段列表
+- `GET /api/tasks/{id}/stages/{stage}` — 阶段详情
+- `POST /api/tasks/{id}/stages/{stage}/run` — 执行阶段
 
-### Highlight Extract Prompt
-```
-基于以下视频字幕，请识别出最值得保留的精彩片段：
+### 场景 / 候选
+- `GET /api/tasks/{id}/scenes` — 场景列表（tag/score/search 筛选）
+- `GET /api/tasks/{id}/scenes/{id}` — 单个场景
+- `PUT /api/tasks/{id}/scenes/{id}` — 修改场景
+- `GET /api/tasks/{id}/candidates` — 候选列表
+- `PATCH /api/tasks/{id}/candidates/bulk-select` — 批量选中
 
-[字幕内容]
+### 字幕
+- `GET /api/tasks/{id}/transcript` — 获取字幕
+- `PUT /api/tasks/{id}/transcript` — 保存修改
+- `PUT /api/tasks/{id}/transcript/segments/{idx}` — 更新片段
 
-要求：
-1. 选出 3-5 个最重要的片段
-2. 每个片段给出标题和理由
-3. 评分标准: 信息密度、观点新颖性、实用性
-4. 输出 JSON 格式
-```
+### 配置参考
+- `GET /api/config/presets` — 预设权重
+- `GET /api/config/clip-modes` — 剪辑模式
+- `GET /api/config/scene-types` — 场景类型
+- `GET /api/config/score-dimensions` — 评分维度
+- `GET /api/config/pipeline-stages` — DAG 定义
+- `GET /api/config/weights` — 完整权重
+- `GET /api/config/duration-templates` — 时长模板
+
+### 预设管理
+- `GET /api/presets` — 预设列表
+- `GET /api/presets/{name}` — 预设详情
+- `PUT /api/presets/{name}` — 保存预设
+- `DELETE /api/presets/{name}` — 删除预设
+- `POST /api/presets/{name}/duplicate` — 复制预设
+
+### Prompt 管理
+- `GET /api/prompts` — Prompt 列表
+- `GET /api/prompts/{name}` — Prompt 内容
+- `PUT /api/prompts/{name}` — 保存 Prompt
+
+### 用户设置
+- `GET /api/settings` — 获取设置
+- `PUT /api/settings` — 保存设置（同步 config.yaml）
+
+### 文件系统
+- `GET /api/fs/drives` — 列出驱动器
+- `GET /api/fs/list?path=...` — 列出目录
+
+### 文件操作
+- `GET /api/files/{path}` — 下载文件
+- `GET /api/files/{path}/thumbnail` — 生成缩略图
+
+### 实时推送
+- `GET /api/events` — SSE 全局事件流
+- `GET /api/tasks/{id}/events` — 特定任务 SSE 流
 
 ---
 
-## 七、配置设计 (config.yaml)
-
-```yaml
-whisper:
-  model: "large-v3"
-  device: "auto"            # auto / cuda / cpu
-  fp16: true
-  default_language: "zh"
-
-llm:
-  provider: "ollama"        # ollama / openai_compatible
-  model: "qwen2.5-7b"
-  endpoint: "http://localhost:11434"
-  timeout: 120
-
-output:
-  default_dir: "./outputs"
-  formats:
-    - srt
-    - json
-    - markdown
-
-ffmpeg:
-  path: "ffmpeg"            # ffmpeg 可执行文件路径
-```
-
----
-
-## 八、依赖清单
+## 七、依赖清单
 
 ```toml
 [project]
@@ -416,75 +404,21 @@ dependencies = [
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "pyyaml>=6.0",
-    "rich>=13.0",           # CLI 美化输出
-    "ffmpeg-python>=0.2",   # 后期剪辑用
-    "httpx>=0.27",          # Ollama API 调用
+    "rich>=13.0",
+    "ffmpeg-python>=0.2",
+    "httpx>=0.27",
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
 ]
-
-[project.optional-dependencies]
-test = ["pytest>=8.0", "pytest-asyncio"]
 ```
 
 ---
 
-## 九、实施路线图
+## 八、注意事项
 
-### Phase 1: 基础管线 ✅ 已完成
-- [x] 项目脚手架 (pyproject.toml, 目录结构)
-- [x] Whisper 转录模块封装
-- [x] CLI 入口 (typer)
-- [x] SRT + JSON + Markdown 导出
-
-### Phase 2: LLM 分析 ✅ 已完成
-- [x] llama.cpp/Qwen 接入 (OpenAI 兼容 API)
-- [x] Prompt 工程
-- [x] JSON 报告生成
-- [x] Markdown 报告生成
-- [x] 长上下文自动截断
-- [x] JSON 多级容错解析
-
-### Phase 3: 自动剪辑 ✅ 已完成
-- [x] ffmpeg 剪辑模块 (`src/edit/clipper.py`)
-- [x] 根据 JSON 自动裁剪 + 拼接
-- [x] 交叉淡入淡出转场
-- [x] concat 直拼模式
-- [x] `clips_from_report()` 一键提取接口
-
-### Phase 3.5: 全流程接口 + 批量处理 ✅ 已完成
-- [x] `process_video()` 单视频全流程接口 (`src/pipeline.py`)
-- [x] 独立资源管理（每次调用创建/释放实例）
-- [x] 批量处理模块 (`src/batch/`)
-- [x] 视频发现（文件/目录/glob）
-- [x] CSV 汇总报告
-- [x] CLI `batch` 命令
-
-### Phase 4: 功能增强 (进行中)
-- [ ] 并发控制 (`--workers N`)
-- [ ] 剪辑后处理增强（字幕烧录、封面生成、元数据嵌入）
-- [ ] Smart Clip Engine v2.0（智能片段筛选引擎）
-  - [ ] Scene Detection（Whisper segment 分组 MVP）
-  - [ ] 多维评分数据结构（Scene, ClipCandidate）
-  - [ ] LLM Scene 标注（分段调用）
-  - [ ] Score Engine（preset 权重计算）
-  - [ ] Filter Engine（Diversity 去重）
-  - [ ] Clip Mode + Clip Count（CLI 参数）
-  - [ ] Duration Planner（目标时长组合）
-  - [ ] Category Weight（平台预设）
-  - [ ] 用户自定义 Prompt
-  - [ ] LLM Final Review（二阶段筛选）
-
-### Phase 5: Web 服务 (未来)
-- [ ] FastAPI 服务化
-- [ ] Web UI (NiceGUI → Tauri)
-- [ ] 批量处理队列
-- [ ] 任务进度实时推送
-
----
-
-## 十、注意事项
-
-1. **Whisper large-v3 模型较大** (~6GB)，首次加载需要时间，建议模型缓存
-2. **Ollama 需要本地运行**，确保 `http://localhost:11434` 可达
-3. **长视频处理**：考虑分段转录策略，避免 OOM
-4. **中文支持**：Whisper large-v3 中文效果较好，但标点可能不完美
-5. **输出目录**：按视频文件名 + 时间戳组织，避免覆盖
+1. **Whisper large-v3 模型较大** (~6GB)，首次加载需要时间
+2. **LLM 支持本地和在线**：通过 Web 设置页面切换，配置自动同步
+3. **长视频处理**：>30min 自动分段转录，10 分钟 chunk + 10 秒重叠
+4. **中文支持**：Whisper large-v3 中文效果好，前后端完整 i18n
+5. **任务持久化**：`data/tasks.json` 自动保存，后端重启不丢失
+6. **输出目录**：按 `outputs/{video_stem}/` 组织，避免覆盖
